@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "626625303464",
+    "project_id": "fridge-manager-cf89d",
+    "storage_bucket": "fridge-manager-cf89d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:626625303464:android:271328bca6e7e10e1bc39d",
+        "android_client_info": {
+          "package_name": "com.example.fridge_manager"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAqNyKpa7pND3OHMsoj2uf_IepVH1p1pis"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
