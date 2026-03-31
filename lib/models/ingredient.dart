@@ -39,7 +39,7 @@ class Ingredient {
       imageUrl: map['image_url'] as String?,
       category: map['category'] as String? ?? '채소',
       quantity: (map['quantity'] is num) ? (map['quantity'] as num).toInt() : 1,
-      unit: map['unit'] as String? ?? '단위없음',
+      unit: map['unit'] as String? ?? '개',
       storage: map['storage'] as String? ?? '냉장',
       expirationDate: map['expiration_date'] is Timestamp
           ? (map['expiration_date'] as Timestamp).toDate()
