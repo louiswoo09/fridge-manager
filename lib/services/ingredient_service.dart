@@ -9,7 +9,7 @@ class IngredientService {
   Stream<List<Ingredient>> getIngredients({
     bool sortByExpiration = true,
   }) {
-    final uid = _auth.currentUser?.uid ?? "h4in0wUpPbYPEAWfc4zgE21FvN02";
+    final uid = _auth.currentUser?.uid ?? 'h4in0wUpPbYPEAWfc4zgE21FvN02';
     //if (uid == null) return Stream.value([]);
 
     Query<Map<String, dynamic>> query = _db

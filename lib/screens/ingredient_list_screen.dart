@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import '../models/ingredient.dart';
 import '../services/ingredient_service.dart';
+import 'add_ingredient_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'edit_ingredient_screen.dart';
 
 class IngredientListScreen extends StatelessWidget {
   final IngredientService _service = IngredientService();
@@ -57,9 +60,7 @@ class IngredientListScreen extends StatelessWidget {
           }
 
           if (snapshot.hasError) {
-            return Center(
-              child: Text('에러 발생: ${snapshot.error}'),
-            );
+            return Center(child: Text('에러 발생: ${snapshot.error}'));
           }
 
           if (!snapshot.hasData || snapshot.data!.isEmpty) {
@@ -77,52 +78,152 @@ class IngredientListScreen extends StatelessWidget {
               final formattedDate =
                   "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
 
-              final days = item.expirationDate.difference(DateTime.now()).inDays;
-              final dDay = days < 0 ? '유통기한 지남($days일)' : days == 0 ? 'D-Day' : 'D-$days';
+              final days = item.expirationDate
+                  .difference(DateTime.now())
+                  .inDays;
+              final dDay = days < 0
+                  ? '유통기한 ${days.abs()}일 지남'
+                  : days == 0
+                  ? 'D-Day'
+                  : 'D-$days';
 
-              return Card(
-                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                child: ExpansionTile(
-                  collapsedShape: const Border(),  
-                  shape: const Border(),
-                  leading: CircleAvatar(
-                    backgroundColor: Colors.grey[200],
-                    radius: 24,
-                    child: Icon(
-                      _getCategoryIcon(item.category),
-                      color: Colors.grey[700],
+              return Dismissible(
+                key: Key(item.id),
+                direction: DismissDirection.endToStart,
+                background: Container(
+                  alignment: Alignment.centerRight,
+                  padding: const EdgeInsets.only(right: 20),
+                  color: Colors.red,
+                  child: const Icon(Icons.delete, color: Colors.white),
+                ),
+                confirmDismiss: (direction) async {
+                  return await showDialog(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('삭제 확인'),
+                      content: Text('${item.name}을(를) 삭제할까요?'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('취소'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text(
+                            '삭제',
+                            style: TextStyle(color: Colors.red),
+                          ),
+                        ),
+                      ],
                     ),
+                  );
+                },
+                onDismissed: (direction) async {
+                  try {
+                    await FirebaseFirestore.instance
+                        .collection('Ingredients')
+                        .doc(item.id)
+                        .update({
+                          'is_deleted': true,
+                          'deleted_at': Timestamp.now(),
+                        });
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('${item.name} 삭제됨'),
+                        action: SnackBarAction(
+                          label: '되돌리기',
+                          onPressed: () {
+                            FirebaseFirestore.instance
+                                .collection('Ingredients')
+                                .doc(item.id)
+                                .update({
+                                  'is_deleted': false,
+                                  'deleted_at': null,
+                                });
+                          },
+                        ),
+                      ),
+                    );
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('삭제 중 오류가 발생했습니다.')),
+                    );
+                  }
+                },
+                child: Card(
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
                   ),
-                  title: Text(
-                    '${item.name} (${item.storage})',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  subtitle: Text(
-                    dDay,
-                    style: TextStyle(
-                      color: _getExpiryColor(item.expirationDate),
-                      fontWeight: FontWeight.bold,
+                  child: ExpansionTile(
+                    collapsedShape: const Border(),
+                    shape: const Border(),
+                    leading: CircleAvatar(
+                      backgroundColor: Colors.grey[200],
+                      radius: 24,
+                      child: Icon(
+                        _getCategoryIcon(item.category),
+                        color: Colors.grey[700],
+                      ),
                     ),
+                    title: Text(
+                      '${item.name} (${item.storage})',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: Text(
+                      dDay,
+                      style: TextStyle(
+                        color: _getExpiryColor(item.expirationDate),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    trailing: Text(
+                      '${item.quantity}${item.unit}',
+                      style: const TextStyle(fontSize: 16),
+                    ),
+                    children: [
+                      const Divider(height: 1),
+                      const SizedBox(height: 8),
+                      _detailRow('카테고리', item.category),
+                      _detailRow('수량', '${item.quantity}${item.unit}'),
+                      _detailRow('보관 방법', item.storage),
+                      _detailRow('유통기한', formattedDate),
+                      _detailRow(
+                        '등록일',
+                        "${item.addedAt.year}-${item.addedAt.month.toString().padLeft(2, '0')}-${item.addedAt.day.toString().padLeft(2, '0')}",
+                      ),
+                      const SizedBox(height: 8),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.push(
+                             context,
+                              MaterialPageRoute(
+                                builder: (context) => EditIngredientScreen(ingredient: item),
+                              ),
+                            ),
+                            child: const Text('수정'),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                   ),
-                  trailing: Text(
-                    '${item.quantity}${item.unit}',
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                  children: [
-                    const Divider(height: 1),
-                    const SizedBox(height: 8),
-                    _detailRow('카테고리', item.category),
-                    _detailRow('수량', '${item.quantity}${item.unit}'),
-                    _detailRow('보관 방법', item.storage),
-                    _detailRow('유통기한', formattedDate),
-                    _detailRow('등록일', item.addedAt.toString().substring(0, 10)),
-                    const SizedBox(height: 8),
-                  ],
                 ),
               );
             },
           );
         },
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const AddIngredientScreen()),
+        ),
+        child: const Icon(Icons.add),
       ),
     );
   }
