@@ -20,7 +20,7 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
   DateTime _expirationDate = DateTime.now().add(const Duration(days: 7));
 
   final List<String> _categories = ['채소', '육류', '유제품', '과일', '해산물', '기타'];
-  final List<String> _units = ['개', 'g', 'ml', '팩'];
+  final List<String> _units = ['개', 'g', 'ml', 'L', '팩'];
   final List<String> _storages = ['냉장', '냉동', '실온'];
 
   @override
@@ -44,20 +44,22 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
 
   Future<void> _save() async {
     if (_nameController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('식재료 이름을 입력해주세요.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('식재료 이름을 입력해주세요.')));
       return;
     }
     if (_quantityController.text.isNotEmpty &&
         int.tryParse(_quantityController.text) == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('수량은 숫자로 입력해주세요.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('수량은 숫자로 입력해주세요.')));
       return;
     }
 
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? 'h4in0wUpPbYPEAWfc4zgE21FvN02';
+    final uid =
+        FirebaseAuth.instance.currentUser?.uid ??
+        'h4in0wUpPbYPEAWfc4zgE21FvN02';
 
     final ingredient = Ingredient(
       id: '',
@@ -72,11 +74,18 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
       isDeleted: false,
     );
 
-    await FirebaseFirestore.instance
-        .collection('Ingredients')
-        .add(ingredient.toMap());
-
-    if (mounted) Navigator.pop(context);
+    try {
+      await FirebaseFirestore.instance
+          .collection('Ingredients')
+          .add(ingredient.toMap());
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('저장 중 오류가 발생했습니다.')));
+      }
+    }
   }
 
   @override
@@ -111,7 +120,9 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
                 const SizedBox(width: 12),
                 DropdownButton<String>(
                   value: _unit,
-                  items: _units.map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
+                  items: _units
+                      .map((u) => DropdownMenuItem(value: u, child: Text(u)))
+                      .toList(),
                   onChanged: (v) => setState(() => _unit = v!),
                 ),
               ],
@@ -121,7 +132,9 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
             DropdownButton<String>(
               value: _category,
               isExpanded: true,
-              items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+              items: _categories
+                  .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                  .toList(),
               onChanged: (v) => setState(() => _category = v!),
             ),
             const SizedBox(height: 16),
@@ -129,7 +142,9 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
             DropdownButton<String>(
               value: _storage,
               isExpanded: true,
-              items: _storages.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+              items: _storages
+                  .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                  .toList(),
               onChanged: (v) => setState(() => _storage = v!),
             ),
             const SizedBox(height: 16),
@@ -137,7 +152,7 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  '유통기한: ${_expirationDate.year}-${_expirationDate.month.toString().padLeft(2, '0')}-${_expirationDate.day.toString().padLeft(2, '0')}',
+                  '소비기한: ${_expirationDate.year}-${_expirationDate.month.toString().padLeft(2, '0')}-${_expirationDate.day.toString().padLeft(2, '0')}',
                   style: const TextStyle(fontSize: 16),
                 ),
                 TextButton(
@@ -149,10 +164,7 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
             const SizedBox(height: 32),
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _save,
-                child: const Text('저장'),
-              ),
+              child: ElevatedButton(onPressed: _save, child: const Text('저장')),
             ),
           ],
         ),

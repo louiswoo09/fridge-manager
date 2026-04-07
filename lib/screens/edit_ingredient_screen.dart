@@ -21,14 +21,16 @@ class _EditIngredientScreenState extends State<EditIngredientScreen> {
   late DateTime _expirationDate;
 
   final List<String> _categories = ['채소', '육류', '유제품', '과일', '해산물', '기타'];
-  final List<String> _units = ['개', 'g', 'ml', '팩'];
+  final List<String> _units = ['개', 'g', 'ml', 'L', '팩'];
   final List<String> _storages = ['냉장', '냉동', '실온'];
 
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.ingredient.name);
-    _quantityController = TextEditingController(text: widget.ingredient.quantity.toString());
+    _quantityController = TextEditingController(
+      text: widget.ingredient.quantity.toString(),
+    );
     _category = widget.ingredient.category;
     _unit = widget.ingredient.unit;
     _storage = widget.ingredient.storage;
@@ -56,35 +58,43 @@ class _EditIngredientScreenState extends State<EditIngredientScreen> {
 
   Future<void> _save() async {
     if (_nameController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('식재료 이름을 입력해주세요.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('식재료 이름을 입력해주세요.')));
       return;
     }
 
     if (_quantityController.text.isNotEmpty &&
         int.tryParse(_quantityController.text) == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('수량은 숫자로 입력해주세요.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('수량은 숫자로 입력해주세요.')));
       return;
     }
 
     final updated = widget.ingredient.copyWith(
       name: _nameController.text.trim(),
       category: _category,
-      quantity: int.tryParse(_quantityController.text) ?? widget.ingredient.quantity,
+      quantity:
+          int.tryParse(_quantityController.text) ?? widget.ingredient.quantity,
       unit: _unit,
       storage: _storage,
       expirationDate: _expirationDate,
     );
 
-    await FirebaseFirestore.instance
-        .collection('Ingredients')
-        .doc(widget.ingredient.id)
-        .update(updated.toMap(isCreate: false));
-
-    if (mounted) Navigator.pop(context);
+    try {
+      await FirebaseFirestore.instance
+          .collection('Ingredients')
+          .doc(widget.ingredient.id)
+          .update(updated.toMap(isCreate: false));
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('수정 중 오류가 발생했습니다.')));
+      }
+    }
   }
 
   @override
@@ -119,7 +129,9 @@ class _EditIngredientScreenState extends State<EditIngredientScreen> {
                 const SizedBox(width: 12),
                 DropdownButton<String>(
                   value: _unit,
-                  items: _units.map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
+                  items: _units
+                      .map((u) => DropdownMenuItem(value: u, child: Text(u)))
+                      .toList(),
                   onChanged: (v) => setState(() => _unit = v!),
                 ),
               ],
@@ -129,7 +141,9 @@ class _EditIngredientScreenState extends State<EditIngredientScreen> {
             DropdownButton<String>(
               value: _category,
               isExpanded: true,
-              items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+              items: _categories
+                  .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                  .toList(),
               onChanged: (v) => setState(() => _category = v!),
             ),
             const SizedBox(height: 16),
@@ -137,7 +151,9 @@ class _EditIngredientScreenState extends State<EditIngredientScreen> {
             DropdownButton<String>(
               value: _storage,
               isExpanded: true,
-              items: _storages.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+              items: _storages
+                  .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                  .toList(),
               onChanged: (v) => setState(() => _storage = v!),
             ),
             const SizedBox(height: 16),
@@ -145,7 +161,7 @@ class _EditIngredientScreenState extends State<EditIngredientScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  '유통기한: ${_expirationDate.year}-${_expirationDate.month.toString().padLeft(2, '0')}-${_expirationDate.day.toString().padLeft(2, '0')}',
+                  '소비기한: ${_expirationDate.year}-${_expirationDate.month.toString().padLeft(2, '0')}-${_expirationDate.day.toString().padLeft(2, '0')}',
                   style: const TextStyle(fontSize: 16),
                 ),
                 TextButton(
