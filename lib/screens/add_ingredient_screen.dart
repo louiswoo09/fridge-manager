@@ -57,9 +57,7 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
       return;
     }
 
-    final uid =
-        FirebaseAuth.instance.currentUser?.uid ??
-        'h4in0wUpPbYPEAWfc4zgE21FvN02';
+    final uid = FirebaseAuth.instance.currentUser!.uid;
 
     final ingredient = Ingredient(
       id: '',

@@ -5,6 +5,7 @@ import '../models/ingredient.dart';
 import '../services/ingredient_service.dart';
 import 'add_ingredient_screen.dart';
 import 'edit_ingredient_screen.dart';
+import 'profile_screen.dart';
 
 class IngredientListScreen extends StatefulWidget {
   const IngredientListScreen({super.key});
@@ -192,7 +193,15 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
                   child: const Text('삭제 완료'),
                 ),
               ]
-            : null,
+            : [
+          IconButton(
+            icon: const Icon(Icons.person),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const ProfileScreen()),
+            ),
+          ),
+        ],
       ),
       body: _buildBody(),
       floatingActionButton: _isDeleteMode
