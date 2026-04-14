@@ -93,6 +93,10 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
   }
 
   void _showFilterSheet() {
+    String tempCategory = _selectedCategory;
+    String tempStorage = _selectedStorage;
+    int? tempExpiry = _selectedExpiry;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -192,6 +196,28 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
                       _sheetExpiryChip('7일 이내', 7, setSheetState),
                       _sheetExpiryChip('14일 이내', 14, setSheetState),
                       _sheetExpiryChip('만료', -1, setSheetState),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _selectedCategory = tempCategory;
+                            _selectedStorage = tempStorage;
+                            _selectedExpiry = tempExpiry;
+                          });
+                          Navigator.pop(context);
+                        },
+                        child: const Text('취소'),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('확인'),
+                      ),
                     ],
                   ),
                 ],
@@ -352,7 +378,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
                       hintText: '재료명 검색',
                       prefixIcon: const Icon(Icons.search, color: Colors.grey),
                       filled: true,
-                      fillColor: Colors.grey[10],
+                      fillColor: const Color.fromARGB(15, 158, 158, 158),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
@@ -395,26 +421,12 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
                     });
                   },
                 ),
-                Stack(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.tune),
-                      onPressed: _showFilterSheet,
-                    ),
-                    if (_hasFilter)
-                      Positioned(
-                        right: 8,
-                        top: 8,
-                        child: Container(
-                          width: 8,
-                          height: 8,
-                          decoration: const BoxDecoration(
-                            color: Colors.red,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                      ),
-                  ],
+                IconButton(
+                  icon: Badge(
+                    isLabelVisible: _hasFilter,
+                    child: const Icon(Icons.tune),
+                  ),
+                  onPressed: _showFilterSheet,
                 ),
                 IconButton(
                   icon: const Icon(Icons.person),
