@@ -2,7 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Ingredient {
   final String id;
-  final String uid;
   final String name;
   final String? imageUrl;
   final String category;
@@ -17,7 +16,6 @@ class Ingredient {
 
   Ingredient({
     required this.id,
-    required this.uid,
     required this.name,
     this.imageUrl,
     required this.category,
@@ -34,7 +32,6 @@ class Ingredient {
   factory Ingredient.fromMap(Map<String, dynamic> map, String id) {
     return Ingredient(
       id: id,
-      uid: map['uid'] as String? ?? '',
       name: map['name'] as String? ?? '이름 없음',
       imageUrl: map['image_url'] as String?,
       category: map['category'] as String? ?? '채소',
@@ -59,7 +56,6 @@ class Ingredient {
 
   Map<String, dynamic> toMap({bool isCreate = true}) {
     return {
-      'uid': uid,
       'name': name,
       if (imageUrl != null) 'image_url': imageUrl,
       'category': category,
@@ -80,7 +76,6 @@ class Ingredient {
 
   Ingredient copyWith({
     String? id,
-    String? uid,
     String? name,
     String? imageUrl,
     String? category,
@@ -95,7 +90,6 @@ class Ingredient {
   }) {
     return Ingredient(
       id: id ?? this.id,
-      uid: uid ?? this.uid,
       name: name ?? this.name,
       imageUrl: imageUrl ?? this.imageUrl,
       category: category ?? this.category,

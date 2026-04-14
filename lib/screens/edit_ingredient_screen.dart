@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/ingredient.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class EditIngredientScreen extends StatefulWidget {
   final Ingredient ingredient;
@@ -83,8 +84,11 @@ class _EditIngredientScreenState extends State<EditIngredientScreen> {
     );
 
     try {
+      final uid = FirebaseAuth.instance.currentUser!.uid;
       await FirebaseFirestore.instance
-          .collection('Ingredients')
+          .collection('users')
+          .doc(uid)
+          .collection('ingredients')
           .doc(widget.ingredient.id)
           .update(updated.toMap(isCreate: false));
       if (mounted) Navigator.pop(context);

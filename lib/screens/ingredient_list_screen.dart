@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/ingredient.dart';
 import '../services/ingredient_service.dart';
 import 'add_ingredient_screen.dart';
@@ -20,8 +21,43 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
   bool _isDeleteMode = false;
   bool _isMenuOpen = false;
   bool _isLoading = true;
+  bool _isSearching = false;
   final Set<String> _selectedIds = {};
   List<Ingredient> _items = [];
+
+  String _selectedCategory = '전체';
+  String _selectedStorage = '전체';
+  int? _selectedExpiry;
+  String _searchQuery = '';
+
+  final TextEditingController _searchController = TextEditingController();
+
+  String get _uid => FirebaseAuth.instance.currentUser!.uid;
+
+  List<Ingredient> get _filteredItems {
+    final now = DateTime.now();
+    return _items.where((item) {
+      final categoryMatch =
+          _selectedCategory == '전체' || item.category == _selectedCategory;
+      final storageMatch =
+          _selectedStorage == '전체' || item.storage == _selectedStorage;
+      final days = item.expirationDate.difference(now).inDays;
+      final expiryMatch = _selectedExpiry == null
+          ? true
+          : _selectedExpiry == -1
+          ? days < 0
+          : days <= _selectedExpiry!;
+      final searchMatch =
+          _searchQuery.isEmpty ||
+          item.name.toLowerCase().contains(_searchQuery.toLowerCase());
+      return categoryMatch && storageMatch && expiryMatch && searchMatch;
+    }).toList();
+  }
+
+  bool get _hasFilter =>
+      _selectedCategory != '전체' ||
+      _selectedStorage != '전체' ||
+      _selectedExpiry != null;
 
   @override
   void initState() {
@@ -52,7 +88,130 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
   @override
   void dispose() {
     _subscription.cancel();
+    _searchController.dispose();
     super.dispose();
+  }
+
+  void _showFilterSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          return SingleChildScrollView(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                20,
+                20,
+                MediaQuery.of(context).viewInsets.bottom + 20,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        '필터',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _selectedCategory = '전체';
+                            _selectedStorage = '전체';
+                            _selectedExpiry = null;
+                          });
+                          setSheetState(() {});
+                        },
+                        child: const Text('초기화'),
+                      ),
+                    ],
+                  ),
+                  const Divider(),
+                  const Text(
+                    '식재료 분류',
+                    style: TextStyle(color: Colors.grey, fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: ['전체', '채소', '육류', '유제품', '과일', '해산물', '기타']
+                        .map(
+                          (c) => FilterChip(
+                            label: Text(c),
+                            selected: _selectedCategory == c,
+                            onSelected: (_) {
+                              setState(() => _selectedCategory = c);
+                              setSheetState(() {});
+                            },
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    '보관 유형',
+                    style: TextStyle(color: Colors.grey, fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: ['전체', '냉장', '냉동', '실온']
+                        .map(
+                          (s) => FilterChip(
+                            label: Text(s),
+                            selected: _selectedStorage == s,
+                            onSelected: (_) {
+                              setState(() => _selectedStorage = s);
+                              setSheetState(() {});
+                            },
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    '소비기한',
+                    style: TextStyle(color: Colors.grey, fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      _sheetExpiryChip('전체', null, setSheetState),
+                      _sheetExpiryChip('3일 이내', 3, setSheetState),
+                      _sheetExpiryChip('7일 이내', 7, setSheetState),
+                      _sheetExpiryChip('14일 이내', 14, setSheetState),
+                      _sheetExpiryChip('만료', -1, setSheetState),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _sheetExpiryChip(String label, int? value, StateSetter setSheetState) {
+    return FilterChip(
+      label: Text(label),
+      selected: _selectedExpiry == value,
+      onSelected: (_) {
+        setState(() => _selectedExpiry = value);
+        setSheetState(() {});
+      },
+    );
   }
 
   Color _getExpiryColor(DateTime expiry, DateTime now) {
@@ -124,7 +283,9 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
       final batch = FirebaseFirestore.instance.batch();
       for (final id in deletedIds) {
         final ref = FirebaseFirestore.instance
-            .collection('Ingredients')
+            .collection('users')
+            .doc(_uid)
+            .collection('ingredients')
             .doc(id);
         batch.update(ref, {'is_deleted': true, 'deleted_at': Timestamp.now()});
       }
@@ -150,7 +311,9 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
                   final batch = FirebaseFirestore.instance.batch();
                   for (final id in deletedIds) {
                     final ref = FirebaseFirestore.instance
-                        .collection('Ingredients')
+                        .collection('users')
+                        .doc(_uid)
+                        .collection('ingredients')
                         .doc(id);
                     batch.update(ref, {
                       'is_deleted': false,
@@ -177,6 +340,32 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(_isDeleteMode ? '${_selectedIds.length}개 선택됨' : '냉장고 매니저'),
+        bottom: _isSearching
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(56),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: TextField(
+                    controller: _searchController,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      hintText: '재료명 검색',
+                      prefixIcon: const Icon(Icons.search, color: Colors.grey),
+                      filled: true,
+                      fillColor: Colors.grey[10],
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                      ),
+                    ),
+                    onChanged: (v) => setState(() => _searchQuery = v),
+                  ),
+                ),
+              )
+            : null,
         actions: _isDeleteMode
             ? [
                 TextButton(
@@ -194,14 +383,49 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
                 ),
               ]
             : [
-          IconButton(
-            icon: const Icon(Icons.person),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const ProfileScreen()),
-            ),
-          ),
-        ],
+                IconButton(
+                  icon: Icon(_isSearching ? Icons.close : Icons.search),
+                  onPressed: () {
+                    setState(() {
+                      _isSearching = !_isSearching;
+                      if (!_isSearching) {
+                        _searchQuery = '';
+                        _searchController.clear();
+                      }
+                    });
+                  },
+                ),
+                Stack(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.tune),
+                      onPressed: _showFilterSheet,
+                    ),
+                    if (_hasFilter)
+                      Positioned(
+                        right: 8,
+                        top: 8,
+                        child: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                IconButton(
+                  icon: const Icon(Icons.person),
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const ProfileScreen(),
+                    ),
+                  ),
+                ),
+              ],
       ),
       body: _buildBody(),
       floatingActionButton: _isDeleteMode
@@ -255,223 +479,242 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (_items.isEmpty) {
-      return const Center(child: Text('등록된 식재료가 없어요.'));
-    }
-
     final now = DateTime.now();
+    final filtered = _filteredItems;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () {
         if (_isMenuOpen) setState(() => _isMenuOpen = false);
       },
-      child: ListView.builder(
-        itemCount: _items.length,
-        itemBuilder: (context, index) {
-          final item = _items[index];
-
-          final date = item.expirationDate;
-          final formattedDate =
-              "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
-
-          final days = item.expirationDate.difference(now).inDays;
-          final dDay = days < 0
-              ? '${days.abs()}일 지남'
-              : days == 0
-              ? 'D-Day'
-              : 'D-$days';
-
-          final isSelected = _selectedIds.contains(item.id);
-
-          if (_isDeleteMode) {
-            return Card(
-              key: ValueKey(item.id),
-              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              color: isSelected ? Colors.red[50] : null,
-              child: CheckboxListTile(
-                value: isSelected,
-                onChanged: (checked) {
-                  setState(() {
-                    if (checked == true) {
-                      _selectedIds.add(item.id);
-                    } else {
-                      _selectedIds.remove(item.id);
-                    }
-                  });
-                },
-                secondary: CircleAvatar(
-                  backgroundColor: Colors.grey[200],
-                  radius: 24,
-                  child: Icon(
-                    _getCategoryIcon(item.category),
-                    color: Colors.grey[700],
-                  ),
-                ),
-                title: Text(
-                  '${item.name} (${item.storage})',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                subtitle: Text(
-                  dDay,
-                  style: TextStyle(
-                    color: _getExpiryColor(item.expirationDate, now),
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+      child: filtered.isEmpty
+          ? Center(
+              child: Text(
+                _searchQuery.isNotEmpty || _hasFilter
+                    ? '검색 결과가 없어요.'
+                    : '등록된 식재료가 없어요.',
               ),
-            );
-          }
+            )
+          : ListView.builder(
+              itemCount: filtered.length,
+              itemBuilder: (context, index) {
+                final item = filtered[index];
 
-          return Dismissible(
-            key: ValueKey(item.id),
-            direction: DismissDirection.endToStart,
-            background: Container(
-              alignment: Alignment.centerRight,
-              padding: const EdgeInsets.only(right: 20),
-              color: Colors.red[400],
-              child: const Icon(Icons.delete, color: Colors.white),
-            ),
-            confirmDismiss: (direction) async {
-              final messenger = ScaffoldMessenger.of(context);
+                final date = item.expirationDate;
+                final formattedDate =
+                    "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
 
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('삭제 확인'),
-                  content: Text('${item.name}을(를) 삭제할까요?'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('취소'),
+                final days = item.expirationDate.difference(now).inDays;
+                final dDay = days < 0
+                    ? '${days.abs()}일 지남'
+                    : days == 0
+                    ? 'D-Day'
+                    : 'D-$days';
+
+                final isSelected = _selectedIds.contains(item.id);
+
+                if (_isDeleteMode) {
+                  return Card(
+                    key: ValueKey(item.id),
+                    margin: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
                     ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text(
-                        '삭제',
-                        style: TextStyle(color: Colors.red),
+                    color: isSelected ? Colors.red[50] : null,
+                    child: CheckboxListTile(
+                      value: isSelected,
+                      onChanged: (checked) {
+                        setState(() {
+                          if (checked == true) {
+                            _selectedIds.add(item.id);
+                          } else {
+                            _selectedIds.remove(item.id);
+                          }
+                        });
+                      },
+                      secondary: CircleAvatar(
+                        backgroundColor: Colors.grey[200],
+                        radius: 24,
+                        child: Icon(
+                          _getCategoryIcon(item.category),
+                          color: Colors.grey[700],
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              );
-
-              if (confirm != true) return false;
-
-              try {
-                await FirebaseFirestore.instance
-                    .collection('Ingredients')
-                    .doc(item.id)
-                    .update({
-                      'is_deleted': true,
-                      'deleted_at': Timestamp.now(),
-                    });
-
-                messenger
-                  ..clearSnackBars()
-                  ..showSnackBar(
-                    SnackBar(
-                      content: Text('${item.name} 삭제됨'),
-                      duration: const Duration(seconds: 5),
-                      action: SnackBarAction(
-                        label: '되돌리기',
-                        onPressed: () {
-                          FirebaseFirestore.instance
-                              .collection('Ingredients')
-                              .doc(item.id)
-                              .update({
-                                'is_deleted': false,
-                                'deleted_at': null,
-                              });
-                        },
+                      title: Text(
+                        '${item.name} (${item.storage})',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Text(
+                        dDay,
+                        style: TextStyle(
+                          color: _getExpiryColor(item.expirationDate, now),
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   );
+                }
 
-                return true;
-              } catch (e) {
-                messenger.showSnackBar(const SnackBar(content: Text('삭제 실패')));
-                return false;
-              }
-            },
-            onDismissed: (_) {},
-            child: Card(
-              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              child: ExpansionTile(
-                key: PageStorageKey(item.id),
-                onExpansionChanged: (isExpanded) {
-                  if (_isMenuOpen) {
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (mounted) setState(() => _isMenuOpen = false);
-                    });
-                  }
-                },
-                collapsedShape: const Border(),
-                shape: const Border(),
-                leading: CircleAvatar(
-                  backgroundColor: Colors.grey[200],
-                  radius: 24,
-                  child: Icon(
-                    _getCategoryIcon(item.category),
-                    color: Colors.grey[700],
+                return Dismissible(
+                  key: ValueKey(item.id),
+                  direction: DismissDirection.endToStart,
+                  background: Container(
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: 20),
+                    color: Colors.red[400],
+                    child: const Icon(Icons.delete, color: Colors.white),
                   ),
-                ),
-                title: Text(
-                  '${item.name} (${item.storage})',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                subtitle: Text(
-                  dDay,
-                  style: TextStyle(
-                    color: _getExpiryColor(item.expirationDate, now),
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                trailing: Text(
-                  '${item.quantity}${item.unit}',
-                  style: const TextStyle(fontSize: 16),
-                ),
-                children: [
-                  const Divider(height: 1),
-                  const SizedBox(height: 8),
-                  _detailRow('카테고리', item.category),
-                  _detailRow('수량', '${item.quantity}${item.unit}'),
-                  _detailRow('보관 방법', item.storage),
-                  _detailRow('소비기한', formattedDate),
-                  _detailRow(
-                    '등록일',
-                    "${item.addedAt.year}-${item.addedAt.month.toString().padLeft(2, '0')}-${item.addedAt.day.toString().padLeft(2, '0')}",
-                  ),
-                  const SizedBox(height: 8),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 4,
+                  confirmDismiss: (direction) async {
+                    final messenger = ScaffoldMessenger.of(context);
+
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('삭제 확인'),
+                        content: Text('${item.name}을(를) 삭제할까요?'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text('취소'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, true),
+                            child: const Text(
+                              '삭제',
+                              style: TextStyle(color: Colors.red),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+
+                    if (confirm != true) return false;
+
+                    try {
+                      await FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(_uid)
+                          .collection('ingredients')
+                          .doc(item.id)
+                          .update({
+                            'is_deleted': true,
+                            'deleted_at': Timestamp.now(),
+                          });
+
+                      messenger
+                        ..clearSnackBars()
+                        ..showSnackBar(
+                          SnackBar(
+                            content: Text('${item.name} 삭제됨'),
+                            duration: const Duration(seconds: 5),
+                            action: SnackBarAction(
+                              label: '되돌리기',
+                              onPressed: () {
+                                FirebaseFirestore.instance
+                                    .collection('users')
+                                    .doc(_uid)
+                                    .collection('ingredients')
+                                    .doc(item.id)
+                                    .update({
+                                      'is_deleted': false,
+                                      'deleted_at': null,
+                                    });
+                              },
+                            ),
+                          ),
+                        );
+
+                      return true;
+                    } catch (e) {
+                      messenger.showSnackBar(
+                        const SnackBar(content: Text('삭제 실패')),
+                      );
+                      return false;
+                    }
+                  },
+                  onDismissed: (_) {},
+                  child: Card(
+                    margin: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
                     ),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(width: 0.3),
+                    child: ExpansionTile(
+                      key: PageStorageKey(item.id),
+                      onExpansionChanged: (isExpanded) {
+                        if (_isMenuOpen) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted) {
+                              setState(() => _isMenuOpen = false);
+                            }
+                          });
+                        }
+                      },
+                      collapsedShape: const Border(),
+                      shape: const Border(),
+                      leading: CircleAvatar(
+                        backgroundColor: Colors.grey[200],
+                        radius: 24,
+                        child: Icon(
+                          _getCategoryIcon(item.category),
+                          color: Colors.grey[700],
                         ),
-                        onPressed: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                EditIngredientScreen(ingredient: item),
+                      ),
+                      title: Text(
+                        '${item.name} (${item.storage})',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Text(
+                        dDay,
+                        style: TextStyle(
+                          color: _getExpiryColor(item.expirationDate, now),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      trailing: Text(
+                        '${item.quantity}${item.unit}',
+                        style: const TextStyle(fontSize: 16),
+                      ),
+                      children: [
+                        const Divider(height: 1),
+                        const SizedBox(height: 8),
+                        _detailRow('카테고리', item.category),
+                        _detailRow('수량', '${item.quantity}${item.unit}'),
+                        _detailRow('보관 방법', item.storage),
+                        _detailRow('소비기한', formattedDate),
+                        _detailRow(
+                          '등록일',
+                          "${item.addedAt.year}-${item.addedAt.month.toString().padLeft(2, '0')}-${item.addedAt.day.toString().padLeft(2, '0')}",
+                        ),
+                        const SizedBox(height: 8),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 4,
+                          ),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(width: 0.3),
+                              ),
+                              onPressed: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      EditIngredientScreen(ingredient: item),
+                                ),
+                              ),
+                              child: const Text('수정'),
+                            ),
                           ),
                         ),
-                        child: const Text('수정'),
-                      ),
+                        const SizedBox(height: 8),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 8),
-                ],
-              ),
+                );
+              },
             ),
-          );
-        },
-      ),
     );
   }
 }

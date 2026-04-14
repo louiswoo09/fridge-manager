@@ -61,7 +61,6 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
 
     final ingredient = Ingredient(
       id: '',
-      uid: uid,
       name: _nameController.text.trim(),
       category: _category,
       quantity: int.tryParse(_quantityController.text) ?? 1,
@@ -74,7 +73,9 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
 
     try {
       await FirebaseFirestore.instance
-          .collection('Ingredients')
+          .collection('users')
+          .doc(uid)
+          .collection('ingredients')
           .add(ingredient.toMap());
       if (mounted) Navigator.pop(context);
     } catch (e) {

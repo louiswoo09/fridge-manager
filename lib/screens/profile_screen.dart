@@ -7,17 +7,17 @@ class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
   Future<void> _signOut(BuildContext context) async {
-  await GoogleSignIn.instance.disconnect();
-  await FirebaseAuth.instance.signOut();
+    await GoogleSignIn.instance.disconnect();
+    await FirebaseAuth.instance.signOut();
 
-  if (!context.mounted) return;
+    if (!context.mounted) return;
 
-  Navigator.pushAndRemoveUntil(
-    context,
-    MaterialPageRoute(builder: (context) => const LoginScreen()),
-    (route) => false,
-  );
-}
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (context) => const LoginScreen()),
+      (route) => false,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -41,10 +41,7 @@ class ProfileScreen extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               user?.displayName ?? '이름 없음',
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Text(
