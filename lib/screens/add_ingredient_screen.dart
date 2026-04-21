@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/ingredient.dart';
+import '../services/notification_service.dart';
 
 class AddIngredientScreen extends StatefulWidget {
   const AddIngredientScreen({super.key});
@@ -72,11 +73,15 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
     );
 
     try {
-      await FirebaseFirestore.instance
+      final docRef = await FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
           .collection('ingredients')
           .add(ingredient.toMap());
+
+      await NotificationService.scheduleExpiryNotification(
+        ingredient.copyWith(id: docRef.id),
+      );
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {

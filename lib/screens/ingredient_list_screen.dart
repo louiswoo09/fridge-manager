@@ -7,6 +7,7 @@ import '../services/ingredient_service.dart';
 import 'add_ingredient_screen.dart';
 import 'edit_ingredient_screen.dart';
 import 'profile_screen.dart';
+import '../services/notification_service.dart';
 
 class IngredientListScreen extends StatefulWidget {
   const IngredientListScreen({super.key});
@@ -35,13 +36,19 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
   String get _uid => FirebaseAuth.instance.currentUser!.uid;
 
   List<Ingredient> get _filteredItems {
-    final now = DateTime.now();
     return _items.where((item) {
       final categoryMatch =
           _selectedCategory == '전체' || item.category == _selectedCategory;
       final storageMatch =
           _selectedStorage == '전체' || item.storage == _selectedStorage;
-      final days = item.expirationDate.difference(now).inDays;
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final expiry = DateTime(
+        item.expirationDate.year,
+        item.expirationDate.month,
+        item.expirationDate.day,
+      );
+      final days = expiry.difference(today).inDays;
       final expiryMatch = _selectedExpiry == null
           ? true
           : _selectedExpiry == -1
@@ -59,6 +66,8 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
       _selectedStorage != '전체' ||
       _selectedExpiry != null;
 
+  bool _notificationScheduled = false;
+
   @override
   void initState() {
     super.initState();
@@ -71,6 +80,10 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
           _selectedIds.removeWhere((id) => !_items.any((e) => e.id == id));
           _isLoading = false;
         });
+        if (!_notificationScheduled) {
+          _notificationScheduled = true;
+          NotificationService.scheduleAllNotifications(_items);
+        }
       },
       onError: (error) {
         if (!mounted) return;
@@ -241,7 +254,9 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
   }
 
   Color _getExpiryColor(DateTime expiry, DateTime now) {
-    final days = expiry.difference(now).inDays;
+    final today = DateTime(now.year, now.month, now.day);
+    final expiryDate = DateTime(expiry.year, expiry.month, expiry.day);
+    final days = expiryDate.difference(today).inDays;
     if (days < 0) return Colors.grey;
     if (days <= 3) return Colors.red;
     if (days <= 7) return Colors.orange;
@@ -516,7 +531,13 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
                 final formattedDate =
                     "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
 
-                final days = item.expirationDate.difference(now).inDays;
+                final today = DateTime(now.year, now.month, now.day);
+                final expiry = DateTime(
+                  item.expirationDate.year,
+                  item.expirationDate.month,
+                  item.expirationDate.day,
+                );
+                final days = expiry.difference(today).inDays;
                 final dDay = days < 0
                     ? '${days.abs()}일 지남'
                     : days == 0
