@@ -23,75 +23,54 @@ class NotificationService {
     );
 
     await _notifications
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >()
-        ?.createNotificationChannel(channel);
+    .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+    ?.createNotificationChannel(channel);
 
-    await _notifications
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >()
-        ?.requestNotificationsPermission();
+await _notifications
+    .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+    ?.requestNotificationsPermission();
   }
 
   static int _generateId(String id, int offset) {
     return (id.hashCode & 0x7fffffff) + offset;
   }
 
-  static DateTime _at9am(DateTime date) {
-    return DateTime(date.year, date.month, date.day, 9);
-  }
-
-  static Future<void> scheduleExpiryNotification(Ingredient item) async {
+  static Future<void> showSummaryNotification(List<Ingredient> items) async {
     final now = DateTime.now();
-    final expiryDate = DateTime(
-      item.expirationDate.year,
-      item.expirationDate.month,
-      item.expirationDate.day,
-    );
-    final d3 = expiryDate.subtract(const Duration(days: 3));
-    final d1 = expiryDate.subtract(const Duration(days: 1));
-    final d3Time = _at9am(d3);
-    final d1Time = _at9am(d1);
+    final today = DateTime(now.year, now.month, now.day);
 
-    if (d3Time.isAfter(now)) {
-      await _schedule(
-        id: _generateId(item.id, 0),
-        title: '소비기한 임박',
-        body: '${item.name} 소비기한이 3일 남았어요.',
-        scheduledDate: d3Time,
+    final todayItems = items.where((item) {
+      final expiry = DateTime(
+        item.expirationDate.year,
+        item.expirationDate.month,
+        item.expirationDate.day,
       );
-    }
+      return expiry.difference(today).inDays == 0;
+    }).length;
 
-    if (d1Time.isAfter(now)) {
-      await _schedule(
-        id: _generateId(item.id, 1),
-        title: '소비기한 임박',
-        body: '${item.name} 소비기한이 내일까지예요.',
-        scheduledDate: d1Time,
+    final tomorrowItems = items.where((item) {
+      final expiry = DateTime(
+        item.expirationDate.year,
+        item.expirationDate.month,
+        item.expirationDate.day,
       );
-    }
-  }
+      return expiry.difference(today).inDays == 1;
+    }).length;
 
-  static Future<void> _schedule({
-    required int id,
-    required String title,
-    required String body,
-    required DateTime scheduledDate,
-  }) async {
-    if (scheduledDate.isBefore(DateTime.now())) return;
+    // 테스트 중 주석 처리
+    // if (todayItems == 0 && tomorrowItems == 0) return;
+
+    String body = '테스트 알림 - 오늘: $todayItems개, 내일: $tomorrowItems개';
 
     await _notifications.zonedSchedule(
-      id: id,
-      title: title,
+      id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      title: '소비기한 임박 알림',
       body: body,
-      scheduledDate: tz.TZDateTime.from(scheduledDate, tz.local),
+      scheduledDate: tz.TZDateTime.now(tz.local).add(const Duration(seconds: 30)),
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(
           'expiry_channel',
           '소비기한 알림',
-          channelDescription: '소비기한 임박 식재료 알림',
           importance: Importance.high,
           priority: Priority.high,
         ),
@@ -106,11 +85,6 @@ class NotificationService {
   }
 
   static Future<void> scheduleAllNotifications(List<Ingredient> items) async {
-    await Future.wait(
-      items.map((item) async {
-        await cancelNotification(item.id);
-        await scheduleExpiryNotification(item);
-      }),
-    );
+    await showSummaryNotification(items);
   }
 }

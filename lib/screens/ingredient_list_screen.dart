@@ -66,8 +66,6 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
       _selectedStorage != '전체' ||
       _selectedExpiry != null;
 
-  bool _notificationScheduled = false;
-
   @override
   void initState() {
     super.initState();
@@ -80,10 +78,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
           _selectedIds.removeWhere((id) => !_items.any((e) => e.id == id));
           _isLoading = false;
         });
-        if (!_notificationScheduled) {
-          _notificationScheduled = true;
-          NotificationService.scheduleAllNotifications(_items);
-        }
+        NotificationService.scheduleAllNotifications(_items);
       },
       onError: (error) {
         if (!mounted) return;
