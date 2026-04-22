@@ -23,16 +23,16 @@ class NotificationService {
     );
 
     await _notifications
-    .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-    ?.createNotificationChannel(channel);
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(channel);
 
-await _notifications
-    .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-    ?.requestNotificationsPermission();
-  }
-
-  static int _generateId(String id, int offset) {
-    return (id.hashCode & 0x7fffffff) + offset;
+    await _notifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.requestNotificationsPermission();
   }
 
   static Future<void> showSummaryNotification(List<Ingredient> items) async {
@@ -57,16 +57,34 @@ await _notifications
       return expiry.difference(today).inDays == 1;
     }).length;
 
-    // 테스트 중 주석 처리
-    // if (todayItems == 0 && tomorrowItems == 0) return;
+    String body = '';
+    if (todayItems > 0 && tomorrowItems > 0) {
+      body = '오늘 소비해야 할 식품 $todayItems개, 내일까지인 식품 $tomorrowItems개가 있어요.';
+    } else if (todayItems > 0) {
+      body = '오늘 소비해야 할 식품이 $todayItems개 있어요. 확인해보세요!';
+    } else if (tomorrowItems > 0) {
+      body = '내일까지 소비해야 할 식품이 $tomorrowItems개 있어요.';
+    }
 
-    String body = '테스트 알림 - 오늘: $todayItems개, 내일: $tomorrowItems개';
+    if (todayItems == 0 && tomorrowItems == 0) {
+      await _notifications.cancel(id: 9999);
+      return;
+    }
+    await _notifications.cancel(id: 9999);
+
+    final scheduledTime = tz.TZDateTime(
+      tz.local,
+      now.year,
+      now.month,
+      now.day,
+      9,
+    ).add(now.hour >= 9 ? const Duration(days: 1) : Duration.zero);
 
     await _notifications.zonedSchedule(
-      id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      id: 9999,
       title: '소비기한 임박 알림',
       body: body,
-      scheduledDate: tz.TZDateTime.now(tz.local).add(const Duration(seconds: 30)),
+      scheduledDate: scheduledTime,
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(
           'expiry_channel',
@@ -77,11 +95,6 @@ await _notifications
       ),
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
     );
-  }
-
-  static Future<void> cancelNotification(String itemId) async {
-    await _notifications.cancel(id: _generateId(itemId, 0));
-    await _notifications.cancel(id: _generateId(itemId, 1));
   }
 
   static Future<void> scheduleAllNotifications(List<Ingredient> items) async {
