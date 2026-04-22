@@ -25,4 +25,27 @@ class IngredientService {
           .toList(),
     );
   }
+  Future<void> cleanOldDeletedItems() async {
+    final uid = _auth.currentUser!.uid;
+
+    final snapshot = await _db
+        .collection('users')
+        .doc(uid)
+        .collection('ingredients')
+        .where('is_deleted', isEqualTo: true)
+        .get();
+
+    for (var doc in snapshot.docs) {
+      final deletedAt = doc['deleted_at'];
+
+      if (deletedAt == null) continue;
+
+      final diff =
+          DateTime.now().difference(deletedAt.toDate()).inDays;
+
+      if (diff >= 7) {
+        await doc.reference.delete();
+      }
+    }
+  }
 }

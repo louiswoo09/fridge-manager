@@ -8,6 +8,7 @@ import 'add_ingredient_screen.dart';
 import 'edit_ingredient_screen.dart';
 import 'profile_screen.dart';
 import '../services/notification_service.dart';
+import 'trush_screen.dart';
 
 class IngredientListScreen extends StatefulWidget {
   const IngredientListScreen({super.key});
@@ -69,6 +70,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
   @override
   void initState() {
     super.initState();
+    _service.cleanOldDeletedItems();
     _subscription = _service.getIngredients().listen(
       (items) {
         if (!mounted) return;
@@ -446,6 +448,17 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
                       builder: (context) => const ProfileScreen(),
                     ),
                   ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const TrashScreen(),
+                      ),
+                    );
+                  },
                 ),
               ],
       ),
