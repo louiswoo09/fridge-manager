@@ -72,13 +72,10 @@ class NotificationService {
     }
     await _notifications.cancel(id: 9999);
 
-    final scheduledTime = tz.TZDateTime(
-      tz.local,
-      now.year,
-      now.month,
-      now.day,
-      9,
-    ).add(now.hour >= 9 ? const Duration(days: 1) : Duration.zero);
+    final base = tz.TZDateTime(tz.local, now.year, now.month, now.day, 9);
+    final scheduledTime = base.isAfter(tz.TZDateTime.now(tz.local))
+        ? base
+        : base.add(const Duration(days: 1));
 
     await _notifications.zonedSchedule(
       id: 9999,

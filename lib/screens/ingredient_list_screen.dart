@@ -8,7 +8,7 @@ import 'add_ingredient_screen.dart';
 import 'edit_ingredient_screen.dart';
 import 'profile_screen.dart';
 import '../services/notification_service.dart';
-import 'trush_screen.dart';
+import 'trash_screen.dart';
 
 class IngredientListScreen extends StatefulWidget {
   const IngredientListScreen({super.key});
