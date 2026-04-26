@@ -26,14 +26,16 @@ class IngredientService {
     );
   }
   Future<void> cleanOldDeletedItems() async {
-    final uid = _auth.currentUser!.uid;
+    final uid = FirebaseAuth.instance.currentUser!.uid;
 
-    final snapshot = await _db
+    final snapshot = await FirebaseFirestore.instance
         .collection('users')
         .doc(uid)
         .collection('ingredients')
         .where('is_deleted', isEqualTo: true)
         .get();
+
+    final batch = FirebaseFirestore.instance.batch();
 
     for (var doc in snapshot.docs) {
       final deletedAt = doc['deleted_at'];
@@ -44,8 +46,10 @@ class IngredientService {
           DateTime.now().difference(deletedAt.toDate()).inDays;
 
       if (diff >= 7) {
-        await doc.reference.delete();
+        batch.delete(doc.reference);
       }
     }
+
+    await batch.commit();
   }
 }
