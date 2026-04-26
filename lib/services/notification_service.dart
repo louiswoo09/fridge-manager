@@ -28,11 +28,15 @@ class NotificationService {
         >()
         ?.createNotificationChannel(channel);
 
-    await _notifications
+    final plugin = _notifications
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
-        >()
-        ?.requestNotificationsPermission();
+        >();
+
+    final granted = await plugin?.areNotificationsEnabled() ?? false;
+    if (!granted) {
+      await plugin?.requestNotificationsPermission();
+    }
   }
 
   static Future<void> showSummaryNotification(List<Ingredient> items) async {
