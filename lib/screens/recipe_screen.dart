@@ -123,7 +123,7 @@ class _RecipeScreenState extends State<RecipeScreen> {
 
     final filtered = _items
         .map((e) => e.name.trim())
-        .where((name) => name.length >= 2 && !_isIgnored(name))
+        .where((name) => name.isNotEmpty && !_isIgnored(name))
         .toSet()
         .toList();
 

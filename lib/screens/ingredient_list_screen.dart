@@ -24,6 +24,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
   bool _isMenuOpen = false;
   bool _isLoading = true;
   bool _isSearching = false;
+  bool _notificationScheduled = false;
   final Set<String> _selectedIds = {};
   List<Ingredient> _items = [];
 
@@ -80,7 +81,10 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
           _selectedIds.removeWhere((id) => !_items.any((e) => e.id == id));
           _isLoading = false;
         });
-        NotificationService.scheduleAllNotifications(_items);
+        if (!_notificationScheduled) {
+          _notificationScheduled = true;
+          NotificationService.scheduleAllNotifications(_items);
+        }
       },
       onError: (error) {
         if (!mounted) return;
@@ -293,7 +297,6 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
   Future<void> _deleteSelected() async {
     if (_selectedIds.isEmpty) return;
 
-    final messenger = ScaffoldMessenger.of(context);
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -336,40 +339,14 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
         _isDeleteMode = false;
       });
 
-      messenger
-        ..clearSnackBars()
-        ..showSnackBar(
-          SnackBar(
-            content: Text('$deletedCount개 삭제됨'),
-            duration: const Duration(seconds: 5),
-            action: SnackBarAction(
-              label: '되돌리기',
-              onPressed: () async {
-                try {
-                  final batch = FirebaseFirestore.instance.batch();
-                  for (final id in deletedIds) {
-                    final ref = FirebaseFirestore.instance
-                        .collection('users')
-                        .doc(_uid)
-                        .collection('ingredients')
-                        .doc(id);
-                    batch.update(ref, {
-                      'is_deleted': false,
-                      'deleted_at': null,
-                    });
-                  }
-                  await batch.commit();
-                } catch (e) {
-                  messenger.showSnackBar(
-                    const SnackBar(content: Text('복구 실패')),
-                  );
-                }
-              },
-            ),
-          ),
-        );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$deletedCount개 삭제됨')));
     } catch (e) {
-      messenger.showSnackBar(const SnackBar(content: Text('삭제 중 오류가 발생했습니다.')));
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('삭제 중 오류가 발생했습니다.')));
     }
   }
 
@@ -451,14 +428,12 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.delete),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const TrashScreen(),
-                      ),
-                    );
-                  },
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const TrashScreen(),
+                    ),
+                  ),
                 ),
               ],
       ),
@@ -606,8 +581,6 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
                     child: const Icon(Icons.delete, color: Colors.white),
                   ),
                   confirmDismiss: (direction) async {
-                    final messenger = ScaffoldMessenger.of(context);
-
                     final confirm = await showDialog<bool>(
                       context: context,
                       builder: (context) => AlertDialog(
@@ -642,34 +615,13 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
                             'deleted_at': Timestamp.now(),
                           });
 
-                      messenger
-                        ..clearSnackBars()
-                        ..showSnackBar(
-                          SnackBar(
-                            content: Text('${item.name} 삭제됨'),
-                            duration: const Duration(seconds: 5),
-                            action: SnackBarAction(
-                              label: '되돌리기',
-                              onPressed: () {
-                                FirebaseFirestore.instance
-                                    .collection('users')
-                                    .doc(_uid)
-                                    .collection('ingredients')
-                                    .doc(item.id)
-                                    .update({
-                                      'is_deleted': false,
-                                      'deleted_at': null,
-                                    });
-                              },
-                            ),
-                          ),
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('${item.name} 삭제됨')),
                         );
-
+                      }
                       return true;
                     } catch (e) {
-                      messenger.showSnackBar(
-                        const SnackBar(content: Text('삭제 실패')),
-                      );
                       return false;
                     }
                   },
