@@ -6,6 +6,7 @@ import 'screens/recipe_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'screens/login_screen.dart';
 import 'services/notification_service.dart';
+import 'screens/shopping_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,6 +45,7 @@ class _MainScreenState extends State<MainScreen> {
   final List<Widget> _screens = [
     const IngredientListScreen(),
     const RecipeScreen(),
+    const ShoppingScreen(),
   ];
 
   @override
@@ -55,12 +57,16 @@ class _MainScreenState extends State<MainScreen> {
         onTap: (index) => setState(() => _currentIndex = index),
         items: const [
           BottomNavigationBarItem(
-            icon: Icon(Icons.kitchen),
+            icon: Icon(Icons.kitchen), 
             label: '보유 식재료',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.restaurant_menu),
             label: '레시피 추천',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.shopping_cart),
+            label: '장보기',
           ),
         ],
       ),
