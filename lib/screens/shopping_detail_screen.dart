@@ -277,10 +277,13 @@ class _ShoppingDetailScreenState extends State<ShoppingDetailScreen> {
       List<Map<String, dynamic>>? items;
       for (final entry in priceList) {
         if (entry is! Map) continue;
-        final itemList = entry['item'];
-        if (itemList is List) {
-          items = itemList.cast<Map<String, dynamic>>();
-          break;
+        if (entry['productclscode'] == '01') {
+          // 소매만
+          final itemList = entry['item'];
+          if (itemList is List) {
+            items = itemList.cast<Map<String, dynamic>>();
+            break;
+          }
         }
       }
 
@@ -518,9 +521,21 @@ class _ShoppingDetailScreenState extends State<ShoppingDetailScreen> {
 
   Widget _buildLegend() {
     if (_trendMode == 'daily') {
+      final validList = _trendList.where((data) {
+        const keys = ['d40', 'd30', 'd20', 'd10', 'd0'];
+        for (final key in keys) {
+          final value = data[key];
+          if (value == null || value is List) continue;
+          final priceStr = value.toString().replaceAll(',', '');
+          final price = double.tryParse(priceStr);
+          if (price != null && price > 0) return true;
+        }
+        return false;
+      }).toList();
+
       return Wrap(
         spacing: 16,
-        children: _trendList.map((data) {
+        children: validList.map((data) {
           final year = data['yyyy']?.toString() ?? '';
           return _legendItem(_getDailyLineColor(year), year);
         }).toList(),
@@ -704,7 +719,7 @@ class _ShoppingDetailScreenState extends State<ShoppingDetailScreen> {
               ],
             ),
             const SizedBox(height: 8),
-            _buildLegend(),
+            if (!_isLoading && _trendList.isNotEmpty) _buildLegend(),
             const SizedBox(height: 16),
             if (_isLoading)
               const Center(child: CircularProgressIndicator())
