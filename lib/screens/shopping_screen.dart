@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'shopping_detail_screen.dart';
+import '../services/cart_service.dart';
+import 'cart_screen.dart';
 
 const String kKamisCertKey = String.fromEnvironment('KAMIS_CERT_KEY');
 const String kKamisCertId = String.fromEnvironment('KAMIS_CERT_ID');
@@ -26,6 +28,10 @@ class _ShoppingScreenState extends State<ShoppingScreen>
 
   final TextEditingController _searchController = TextEditingController();
 
+  final CartService _cartService = CartService();
+  Set<String> _cartKeys = {};
+  StreamSubscription<List<String>>? _cartSubscription;
+
   final List<Map<String, String>> _categories = [
     {'code': 'all', 'name': '전체'},
     {'code': '100', 'name': '식량작물'},
@@ -43,9 +49,9 @@ class _ShoppingScreenState extends State<ShoppingScreen>
   };
 
   final Map<String, String> _sortOptions = {
-    'discount': '할인율 큰 순',
-    'price': '가격 저렴한 순',
-    'name': '가나다순',
+    'discount': '할인율순',
+    'price': '가격순',
+    'name': '이름순',
   };
 
   final Map<String, String> _nameOverride = {
@@ -60,12 +66,17 @@ class _ShoppingScreenState extends State<ShoppingScreen>
     super.initState();
     _tabController = TabController(length: _categories.length, vsync: this);
     _fetchData();
+    _cartSubscription = _cartService.watchKeys().listen((keys) {
+      if (!mounted) return;
+      setState(() => _cartKeys = keys.toSet());
+    });
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     _searchController.dispose();
+    _cartSubscription?.cancel();
     super.dispose();
   }
 
@@ -204,6 +215,20 @@ class _ShoppingScreenState extends State<ShoppingScreen>
     return items;
   }
 
+  Future<void> _toggleCart(Map<String, dynamic> item) async {
+    final productNo = item['productno']?.toString() ?? '';
+    final productName = item['productName']?.toString() ?? '';
+    if (productNo.isEmpty) return;
+
+    if (_cartService.contains(_cartKeys, productNo, productName)) {
+      await _cartService.remove(productNo, productName);
+      _showSnack('${_getDisplayName(item)} 장바구니에서 제거됨');
+    } else {
+      await _cartService.add(productNo, productName);
+      _showSnack('${_getDisplayName(item)} 장바구니에 담김');
+    }
+  }
+
   String _getDisplayName(Map<String, dynamic> item) {
     final productNameRaw = item['productName']?.toString() ?? '';
     final categoryCode = item['category_code']?.toString() ?? '';
@@ -236,6 +261,124 @@ class _ShoppingScreenState extends State<ShoppingScreen>
       return '$front($back)';
     }
     return productNameRaw;
+  }
+
+  void _showFilterSheet() {
+    String tempComparison = _comparisonBase;
+    String tempSort = _sortMode;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          return SingleChildScrollView(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                20,
+                20,
+                MediaQuery.of(context).viewInsets.bottom + 20,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        '필터',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _comparisonBase = 'dpr3';
+                            _sortMode = 'discount';
+                          });
+                          setSheetState(() {});
+                        },
+                        child: const Text('초기화'),
+                      ),
+                    ],
+                  ),
+                  const Divider(),
+                  const Text(
+                    '비교 기준',
+                    style: TextStyle(color: Colors.grey, fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: _comparisonOptions.entries
+                        .map(
+                          (e) => FilterChip(
+                            label: Text(e.value),
+                            selected: _comparisonBase == e.key,
+                            onSelected: (_) {
+                              setState(() => _comparisonBase = e.key);
+                              setSheetState(() {});
+                            },
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    '정렬',
+                    style: TextStyle(color: Colors.grey, fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: _sortOptions.entries
+                        .map(
+                          (e) => FilterChip(
+                            label: Text(e.value),
+                            selected: _sortMode == e.key,
+                            onSelected: (_) {
+                              setState(() => _sortMode = e.key);
+                              setSheetState(() {});
+                            },
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _comparisonBase = tempComparison;
+                            _sortMode = tempSort;
+                          });
+                          Navigator.pop(context);
+                        },
+                        child: const Text('취소'),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('확인'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 
   @override
@@ -301,33 +444,20 @@ class _ShoppingScreenState extends State<ShoppingScreen>
               });
             },
           ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.compare_arrows),
-            tooltip: '비교 기준',
-            onSelected: (value) => setState(() => _comparisonBase = value),
-            itemBuilder: (_) => _comparisonOptions.entries
-                .map(
-                  (e) => CheckedPopupMenuItem(
-                    value: e.key,
-                    checked: _comparisonBase == e.key,
-                    child: Text('${e.value} 비교'),
-                  ),
-                )
-                .toList(),
+          IconButton(
+            icon: const Icon(Icons.tune),
+            tooltip: '필터',
+            onPressed: _showFilterSheet,
           ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.sort),
-            tooltip: '정렬',
-            onSelected: (value) => setState(() => _sortMode = value),
-            itemBuilder: (_) => _sortOptions.entries
-                .map(
-                  (e) => CheckedPopupMenuItem(
-                    value: e.key,
-                    checked: _sortMode == e.key,
-                    child: Text(e.value),
-                  ),
-                )
-                .toList(),
+          IconButton(
+            icon: const Icon(Icons.shopping_cart),
+            tooltip: '장바구니',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ShoppingCartScreen()),
+              );
+            },
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -383,6 +513,12 @@ class _ShoppingScreenState extends State<ShoppingScreen>
                               vertical: 6,
                             ),
                             child: ListTile(
+                              contentPadding: const EdgeInsets.fromLTRB(
+                                16,
+                                6,
+                                8,
+                                6,
+                              ),
                               title: Text(
                                 displayName,
                                 style: const TextStyle(
@@ -405,15 +541,45 @@ class _ShoppingScreenState extends State<ShoppingScreen>
                                   ),
                                 ],
                               ),
-                              trailing: Text(
-                                discount > 0
-                                    ? '-${discount.toStringAsFixed(1)}%'
-                                    : '+${discount.abs().toStringAsFixed(1)}%',
-                                style: TextStyle(
-                                  color: discountColor,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    discount > 0
+                                        ? '-${discount.toStringAsFixed(1)}%'
+                                        : '+${discount.abs().toStringAsFixed(1)}%',
+                                    style: TextStyle(
+                                      color: discountColor,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  IconButton(
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    icon: Icon(
+                                      _cartService.contains(
+                                            _cartKeys,
+                                            item['productno']?.toString() ?? '',
+                                            item['productName']?.toString() ??
+                                                '',
+                                          )
+                                          ? Icons.check_circle
+                                          : Icons.add_circle_outline,
+                                      color:
+                                          _cartService.contains(
+                                            _cartKeys,
+                                            item['productno']?.toString() ?? '',
+                                            item['productName']?.toString() ??
+                                                '',
+                                          )
+                                          ? Colors.deepPurple
+                                          : Colors.grey,
+                                    ),
+                                    onPressed: () => _toggleCart(item),
+                                  ),
+                                ],
                               ),
                               onTap: () {
                                 Navigator.push(

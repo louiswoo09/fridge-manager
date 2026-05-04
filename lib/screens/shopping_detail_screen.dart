@@ -189,13 +189,15 @@ class _ShoppingDetailScreenState extends State<ShoppingDetailScreen> {
       }
 
       final data = jsonDecode(response.body);
-      final priceList = data['price'];
+      final priceData = data['price'];
 
-      if (priceList == null || priceList is! List) {
+      if (priceData == null) {
         if (!mounted) return;
         setState(() => _isLoading = false);
         return;
       }
+
+      final priceList = priceData is List ? priceData : [priceData];
 
       List<Map<String, dynamic>>? items;
       for (final entry in priceList) {
@@ -262,13 +264,15 @@ class _ShoppingDetailScreenState extends State<ShoppingDetailScreen> {
       }
 
       final data = jsonDecode(response.body);
-      final priceList = data['price'];
+      final priceData = data['price'];
 
-      if (priceList == null || priceList is! List) {
+      if (priceData == null) {
         if (!mounted) return;
         setState(() => _isLoading = false);
         return;
       }
+
+      final priceList = priceData is List ? priceData : [priceData];
 
       List<Map<String, dynamic>>? items;
       for (final entry in priceList) {
@@ -494,8 +498,16 @@ class _ShoppingDetailScreenState extends State<ShoppingDetailScreen> {
       step = 2000;
     } else if (maxPrice < 50000) {
       step = 5000;
-    } else {
+    } else if (maxPrice < 100000) {
       step = 10000;
+    } else if (maxPrice < 250000) {
+      step = 20000;
+    } else if (maxPrice < 500000) {
+      step = 50000;
+    } else if (maxPrice < 1000000) {
+      step = 100000;
+    } else {
+      step = 200000;
     }
 
     final adjustedMin = ((minPrice - padding) / step).floor() * step;

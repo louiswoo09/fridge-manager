@@ -4,7 +4,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/ingredient.dart';
 
 class AddIngredientScreen extends StatefulWidget {
-  const AddIngredientScreen({super.key});
+  final String? prefilledName;
+  
+  const AddIngredientScreen({super.key, this.prefilledName});
 
   @override
   State<AddIngredientScreen> createState() => _AddIngredientScreenState();
@@ -22,6 +24,14 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
   final List<String> _categories = ['채소', '육류', '유제품', '과일', '해산물', '기타'];
   final List<String> _units = ['개', 'g', 'ml', 'L', '팩'];
   final List<String> _storages = ['냉장', '냉동', '실온'];
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.prefilledName != null) {
+      _nameController.text = widget.prefilledName!;
+    }
+  }
 
   @override
   void dispose() {
@@ -78,8 +88,7 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
           .collection('ingredients')
           .add(ingredient.toMap());
 
-      
-      if (mounted) Navigator.pop(context);
+      if (mounted) Navigator.pop(context, true);  // true 반환
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
