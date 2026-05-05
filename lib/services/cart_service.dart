@@ -10,11 +10,11 @@ class CartService {
     return user.uid;
   }
 
-  CollectionReference<Map<String, dynamic>> get _cartRef => FirebaseFirestore
-      .instance
-      .collection('users')
-      .doc(_uid)
-      .collection('cart');
+  CollectionReference<Map<String, dynamic>> get _cartRef =>
+      FirebaseFirestore.instance
+          .collection('users')
+          .doc(_uid)
+          .collection('cart');
 
   String _makeKey(String productNo, String productName) {
     final cleanName = productName
@@ -31,11 +31,33 @@ class CartService {
     );
   }
 
-  Future<void> add(String productNo, String productName) async {
+  /// 장바구니에 담긴 표시용/검색용 정제된 이름 리스트
+  /// (담을 때 ProductNameFormatter.format 적용한 결과를 같이 저장)
+  Stream<List<String>> watchDisplayNames() {
+    return _cartRef.snapshots().map(
+      (snap) => snap.docs
+          .map((doc) {
+            final data = doc.data();
+            // displayName 우선, 없으면 productName fallback (이전 데이터 호환)
+            return data['displayName']?.toString() ??
+                data['productName']?.toString() ??
+                '';
+          })
+          .where((name) => name.isNotEmpty)
+          .toList(),
+    );
+  }
+
+  Future<void> add({
+    required String productNo,
+    required String productName,
+    required String displayName,
+  }) async {
     final key = _makeKey(productNo, productName);
     await _cartRef.doc(key).set({
       'productno': productNo,
       'productName': productName,
+      'displayName': displayName,
       'addedAt': Timestamp.now(),
     });
   }

@@ -4,22 +4,36 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../models/ingredient.dart';
+import '../models/recipe_mode.dart';
 import '../services/ingredient_service.dart';
+import '../services/cart_service.dart';
+import '../services/recipe_list_cache_service.dart';
 import 'recipe_detail_screen.dart';
+import '../services/product_name_formatter.dart';
 
 const String kFoodApiKey = String.fromEnvironment('FOOD_API_KEY');
 
 class RecipeScreen extends StatefulWidget {
-  const RecipeScreen({super.key});
+  final RecipeMode initialMode;
+
+  const RecipeScreen({super.key, this.initialMode = RecipeMode.fridge});
 
   @override
-  State<RecipeScreen> createState() => _RecipeScreenState();
+  State<RecipeScreen> createState() => RecipeScreenState();
 }
 
-class _RecipeScreenState extends State<RecipeScreen> {
+class RecipeScreenState extends State<RecipeScreen> {
   final IngredientService _service = IngredientService();
-  late StreamSubscription<List<Ingredient>> _sub;
+  final CartService _cartService = CartService();
+  final RecipeListCacheService _listCache = RecipeListCacheService();
+
+  late StreamSubscription<List<Ingredient>> _ingredientSub;
+  StreamSubscription<List<String>>? _cartSub;
+
+  late RecipeMode _currentMode;
   List<Ingredient> _items = [];
+  List<String> _cartIngredientNames = []; // 장바구니 재료 이름 (shopping 모드용)
+
   List<Map<String, dynamic>> _recipes = [];
   bool _isLoading = true;
   bool _isFetching = false;
@@ -41,19 +55,54 @@ class _RecipeScreenState extends State<RecipeScreen> {
   @override
   void initState() {
     super.initState();
-    _sub = _service.getIngredients().listen((items) {
+    _currentMode = widget.initialMode;
+
+    _restoreCachedResult();
+
+    _ingredientSub = _service.getIngredients().listen((items) {
       if (!mounted) return;
       setState(() {
         _items = items;
         _isLoading = false;
       });
     });
+
+    _cartSub = _cartService.watchDisplayNames().listen((names) {
+      if (!mounted) return;
+      setState(() => _cartIngredientNames = names);
+    });
+  }
+
+  void _restoreCachedResult() {
+    if (_listCache.hasResult(_currentMode)) {
+      _recipes = _listCache.recipes(_currentMode);
+      _searchedKeywords = _listCache.searchedKeywords(_currentMode);
+      _hasSearched = true;
+    } else {
+      _recipes = [];
+      _searchedKeywords = '';
+      _hasSearched = false;
+    }
   }
 
   @override
   void dispose() {
-    _sub.cancel();
+    _ingredientSub.cancel();
+    _cartSub?.cancel();
     super.dispose();
+  }
+
+  void _onModeChanged(RecipeMode? mode) {
+    if (mode == null) return;
+    setMode(mode);
+  }
+
+  void setMode(RecipeMode mode) {
+    if (mode == _currentMode) return;
+    setState(() {
+      _currentMode = mode;
+      _restoreCachedResult();
+    });
   }
 
   Future<List<Map<String, dynamic>>> _search(String keyword) async {
@@ -116,19 +165,20 @@ class _RecipeScreenState extends State<RecipeScreen> {
       return;
     }
 
-    if (_items.isEmpty) {
-      _showSnack('식재료를 먼저 등록하세요');
-      return;
-    }
+    final searchPool = _currentMode == RecipeMode.shopping
+        ? _cartIngredientNames
+              .map((e) => ProductNameFormatter.toSearchKeyword(e.trim()))
+              .where((name) => name.isNotEmpty && !_isIgnored(name))
+        : _items
+              .map((e) => ProductNameFormatter.toSearchKeyword(e.name.trim()))
+              .where((name) => name.isNotEmpty && !_isIgnored(name));
 
-    final filtered = _items
-        .map((e) => e.name.trim())
-        .where((name) => name.isNotEmpty && !_isIgnored(name))
-        .toSet()
-        .toList();
+    final filtered = searchPool.toSet().toList();
 
     if (filtered.isEmpty) {
-      _showSnack('유효한 식재료가 없습니다');
+      _showSnack(
+        _currentMode == RecipeMode.shopping ? '장바구니가 비어있어요' : '식재료를 먼저 등록하세요',
+      );
       return;
     }
 
@@ -189,10 +239,19 @@ class _RecipeScreenState extends State<RecipeScreen> {
       final allRecipes = unique.values.toList();
       allRecipes.shuffle();
 
+      final finalRecipes = allRecipes.take(20).toList();
+      final finalKeywords = usedKeywords.join(', ');
+
+      _listCache.save(
+        mode: _currentMode,
+        recipes: finalRecipes,
+        searchedKeywords: finalKeywords,
+      );
+
       setState(() {
-        _recipes = allRecipes.take(20).toList();
+        _recipes = finalRecipes;
         _hasSearched = true;
-        _searchedKeywords = usedKeywords.join(', ');
+        _searchedKeywords = finalKeywords;
       });
     } on TimeoutException {
       if (!mounted) return;
@@ -216,18 +275,49 @@ class _RecipeScreenState extends State<RecipeScreen> {
     }
   }
 
+  bool get _canFetch {
+    if (_currentMode == RecipeMode.shopping) {
+      return _cartIngredientNames.isNotEmpty;
+    }
+    return _items.isNotEmpty;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('레시피 추천')),
+      appBar: AppBar(
+        title: Text(
+          _currentMode == RecipeMode.shopping ? '레시피 추천 (장보기 모드)' : '레시피 추천',
+        ),
+      ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
+                // 모드 선택 토글
                 Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: SegmentedButton<RecipeMode>(
+                    segments: const [
+                      ButtonSegment(
+                        value: RecipeMode.fridge,
+                        label: Text('냉장고'),
+                        icon: Icon(Icons.kitchen),
+                      ),
+                      ButtonSegment(
+                        value: RecipeMode.shopping,
+                        label: Text('장바구니'),
+                        icon: Icon(Icons.shopping_cart),
+                      ),
+                    ],
+                    selected: {_currentMode},
+                    onSelectionChanged: (set) => _onModeChanged(set.first),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                   child: ElevatedButton(
-                    onPressed: (_isFetching || _items.isEmpty)
+                    onPressed: (_isFetching || !_canFetch)
                         ? null
                         : _fetchRecipes,
                     child: const Text('레시피 추천 받기'),
@@ -309,9 +399,11 @@ class _RecipeScreenState extends State<RecipeScreen> {
                                     MaterialPageRoute(
                                       builder: (_) => RecipeDetailScreen(
                                         recipe: recipe,
-                                        myIngredients: _items
+                                        ownedIngredients: _items
                                             .map((e) => e.name)
-                                            .join(', '),
+                                            .toList(),
+                                        extraIngredients: _cartIngredientNames,
+                                        mode: _currentMode,
                                       ),
                                     ),
                                   );

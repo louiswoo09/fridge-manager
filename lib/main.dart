@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'screens/login_screen.dart';
 import 'services/notification_service.dart';
 import 'screens/shopping_screen.dart';
+import 'models/recipe_mode.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -42,23 +43,34 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
 
-  final List<Widget> _screens = [
+  final GlobalKey<RecipeScreenState> _recipeKey =
+      GlobalKey<RecipeScreenState>();
+
+  void _switchToRecipeWithMode(RecipeMode mode) {
+    _recipeKey.currentState?.setMode(mode);
+    setState(() => _currentIndex = 1);
+  }
+
+  late final List<Widget> _screens = [
     const IngredientListScreen(),
-    const RecipeScreen(),
-    const ShoppingScreen(),
+    RecipeScreen(key: _recipeKey),
+    ShoppingScreen(onRequestRecipe: _switchToRecipeWithMode),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _screens[_currentIndex],
+      body: IndexedStack(
+        index: _currentIndex,
+        children: _screens,
+      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) => setState(() => _currentIndex = index),
         items: const [
           BottomNavigationBarItem(
-            icon: Icon(Icons.kitchen), 
-            label: '보유 식재료',
+            icon: Icon(Icons.kitchen),
+            label: '냉장고',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.restaurant_menu),

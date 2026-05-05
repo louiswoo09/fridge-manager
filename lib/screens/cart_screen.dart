@@ -5,15 +5,20 @@ import 'shopping_detail_screen.dart';
 import 'add_ingredient_screen.dart';
 import '../services/product_name_formatter.dart';
 import '../services/kamis_cache_service.dart';
+import '../models/recipe_mode.dart';
 
-class ShoppingCartScreen extends StatefulWidget {
-  const ShoppingCartScreen({super.key});
+typedef OnRequestRecipe = void Function(RecipeMode mode);
+
+class CartScreen extends StatefulWidget {
+  final OnRequestRecipe? onRequestRecipe;
+
+  const CartScreen({super.key, this.onRequestRecipe});
 
   @override
-  State<ShoppingCartScreen> createState() => _ShoppingCartScreenState();
+  State<CartScreen> createState() => _CartScreenState();
 }
 
-class _ShoppingCartScreenState extends State<ShoppingCartScreen> {
+class _CartScreenState extends State<CartScreen> {
   final CartService _cartService = CartService();
   final KamisCacheService _kamisCache = KamisCacheService();
   bool _isLoading = true;
@@ -75,19 +80,31 @@ class _ShoppingCartScreenState extends State<ShoppingCartScreen> {
     final productName = item['productName']?.toString() ?? '';
     if (productNo.isEmpty) return;
 
-    final result = await Navigator.push<bool>(
+    final cleanName = ProductNameFormatter.toSearchKeyword(
+      ProductNameFormatter.format(item),
+    );
+
+    final savedName = await Navigator.push<String>(
       context,
       MaterialPageRoute(
-        builder: (_) => AddIngredientScreen(
-          prefilledName: ProductNameFormatter.format(item),
-        ),
+        builder: (_) => AddIngredientScreen(prefilledName: cleanName),
       ),
     );
 
-    if (result == true && mounted) {
+    if (savedName != null && savedName.isNotEmpty && mounted) {
       await _cartService.remove(productNo, productName);
-      _showSnack('${ProductNameFormatter.format(item)} 보유 식재료에 추가됨');
+      _showSnack('$savedName 냉장고에 추가됨');
     }
+  }
+
+  void _goToRecipeRecommendation() {
+    if (_cartItems.isEmpty) {
+      _showSnack('장바구니가 비어있어요');
+      return;
+    }
+
+    Navigator.pop(context);
+    widget.onRequestRecipe?.call(RecipeMode.shopping);
   }
 
   List<Map<String, dynamic>> get _cartItems {
@@ -103,11 +120,29 @@ class _ShoppingCartScreenState extends State<ShoppingCartScreen> {
     final cartItems = _cartItems;
 
     return Scaffold(
-      appBar: AppBar(title: Text('장바구니 (${cartItems.length})')),
+      appBar: AppBar(
+        title: Text('장바구니 (${cartItems.length})'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.restaurant_menu),
+            tooltip: '이 장바구니로 레시피 추천',
+            onPressed: cartItems.isEmpty ? null : _goToRecipeRecommendation,
+          ),
+        ],
+      ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : cartItems.isEmpty
-          ? const Center(child: Text('장바구니가 비어있어요.'))
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: Text(
+                  '장바구니가 비어있어요.\n\n장보기 화면에서 + 버튼으로 담아보세요.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey, height: 1.5),
+                ),
+              ),
+            )
           : ListView.builder(
               itemCount: cartItems.length,
               itemBuilder: (context, index) {

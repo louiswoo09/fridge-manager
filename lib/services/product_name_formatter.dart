@@ -42,4 +42,14 @@ class ProductNameFormatter {
     }
     return productNameRaw;
   }
+
+  /// 식약처 API 검색용 키워드 추출
+  /// displayName에서 괄호와 그 내용을 제거
+  /// 예: "감자(수미)(시설)" → "감자", "새우(흰다리)(수입)" → "새우"
+  static String toSearchKeyword(String displayName) {
+    return displayName
+        .replaceAll(RegExp(r'\s*\([^)]*\)'), '') // 괄호 제거
+        .replaceAll(' ', '') // 공백 제거
+        .trim();
+  }
 }

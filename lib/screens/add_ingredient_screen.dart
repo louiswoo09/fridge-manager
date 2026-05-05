@@ -88,7 +88,7 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
           .collection('ingredients')
           .add(ingredient.toMap());
 
-      if (mounted) Navigator.pop(context, true);  // true 반환
+      if (mounted) Navigator.pop(context, _nameController.text.trim());
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(

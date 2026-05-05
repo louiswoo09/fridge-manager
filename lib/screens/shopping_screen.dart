@@ -5,9 +5,14 @@ import '../services/cart_service.dart';
 import 'cart_screen.dart';
 import '../services/product_name_formatter.dart';
 import '../services/kamis_cache_service.dart';
+import '../models/recipe_mode.dart';
+
+typedef OnRequestRecipe = void Function(RecipeMode mode);
 
 class ShoppingScreen extends StatefulWidget {
-  const ShoppingScreen({super.key});
+  final OnRequestRecipe? onRequestRecipe;
+
+  const ShoppingScreen({super.key, this.onRequestRecipe});
 
   @override
   State<ShoppingScreen> createState() => _ShoppingScreenState();
@@ -160,12 +165,18 @@ class _ShoppingScreenState extends State<ShoppingScreen>
     final productName = item['productName']?.toString() ?? '';
     if (productNo.isEmpty) return;
 
+    final displayName = ProductNameFormatter.format(item);
+
     if (_cartService.contains(_cartKeys, productNo, productName)) {
       await _cartService.remove(productNo, productName);
-      _showSnack('${ProductNameFormatter.format(item)} 장바구니에서 제거됨');
+      _showSnack('$displayName 장바구니에서 제거됨');
     } else {
-      await _cartService.add(productNo, productName);
-      _showSnack('${ProductNameFormatter.format(item)} 장바구니에 담김');
+      await _cartService.add(
+        productNo: productNo,
+        productName: productName,
+        displayName: displayName,
+      );
+      _showSnack('$displayName 장바구니에 담김');
     }
   }
 
@@ -361,7 +372,10 @@ class _ShoppingScreenState extends State<ShoppingScreen>
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const ShoppingCartScreen()),
+                MaterialPageRoute(
+                  builder: (_) =>
+                      CartScreen(onRequestRecipe: widget.onRequestRecipe),
+                ),
               );
             },
           ),
