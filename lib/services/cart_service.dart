@@ -2,13 +2,19 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class CartService {
-  String get _uid => FirebaseAuth.instance.currentUser!.uid;
+  String get _uid {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw StateError('로그인이 필요해요');
+    }
+    return user.uid;
+  }
 
-  CollectionReference<Map<String, dynamic>> get _cartRef =>
-      FirebaseFirestore.instance
-          .collection('users')
-          .doc(_uid)
-          .collection('cart');
+  CollectionReference<Map<String, dynamic>> get _cartRef => FirebaseFirestore
+      .instance
+      .collection('users')
+      .doc(_uid)
+      .collection('cart');
 
   String _makeKey(String productNo, String productName) {
     final cleanName = productName
@@ -21,8 +27,8 @@ class CartService {
 
   Stream<List<String>> watchKeys() {
     return _cartRef.snapshots().map(
-          (snap) => snap.docs.map((doc) => doc.id).toList(),
-        );
+      (snap) => snap.docs.map((doc) => doc.id).toList(),
+    );
   }
 
   Future<void> add(String productNo, String productName) async {

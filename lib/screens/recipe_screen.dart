@@ -260,7 +260,7 @@ class _RecipeScreenState extends State<RecipeScreen> {
                                 (recipe['ATT_FILE_NO_MAIN'] ??
                                         recipe['MANUAL_IMG01'] ??
                                         '')
-                                    as String;
+                                    .toString();
                             final name = recipe['RCP_NM'] ?? '';
                             final keywords =
                                 (recipe['searched_keywords'] as List?)?.join(
@@ -282,11 +282,10 @@ class _RecipeScreenState extends State<RecipeScreen> {
                                           width: 60,
                                           height: 60,
                                           fit: BoxFit.cover,
-                                          errorBuilder: (_, _, _) =>
-                                              const Icon(
-                                                Icons.restaurant,
-                                                size: 40,
-                                              ),
+                                          errorBuilder: (_, _, _) => const Icon(
+                                            Icons.restaurant,
+                                            size: 40,
+                                          ),
                                         ),
                                       )
                                     : const Icon(Icons.restaurant, size: 40),

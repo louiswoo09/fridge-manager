@@ -1,13 +1,10 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'shopping_detail_screen.dart';
 import '../services/cart_service.dart';
 import 'cart_screen.dart';
-
-const String kKamisCertKey = String.fromEnvironment('KAMIS_CERT_KEY');
-const String kKamisCertId = String.fromEnvironment('KAMIS_CERT_ID');
+import '../services/product_name_formatter.dart';
+import '../services/kamis_cache_service.dart';
 
 class ShoppingScreen extends StatefulWidget {
   const ShoppingScreen({super.key});
@@ -25,6 +22,8 @@ class _ShoppingScreenState extends State<ShoppingScreen>
   String _sortMode = 'discount';
   String _comparisonBase = 'dpr3';
   List<Map<String, dynamic>> _allItems = [];
+
+  final KamisCacheService _kamisCache = KamisCacheService();
 
   final TextEditingController _searchController = TextEditingController();
 
@@ -54,13 +53,6 @@ class _ShoppingScreenState extends State<ShoppingScreen>
     'name': '이름순',
   };
 
-  final Map<String, String> _nameOverride = {
-    '풋고추/풋고추(녹광 등)': '풋고추',
-    '고구마/밤': '밤고구마',
-  };
-
-  final List<String> _stripPrefix = ['풋고추'];
-
   @override
   void initState() {
     super.initState();
@@ -87,84 +79,32 @@ class _ShoppingScreenState extends State<ShoppingScreen>
       ..showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  Future<void> _fetchData() async {
-    if (kKamisCertKey.isEmpty || kKamisCertId.isEmpty) {
-      _showSnack('KAMIS API 키가 설정되지 않았습니다');
-      return;
-    }
-
+  Future<void> _fetchData({bool forceRefresh = false}) async {
     setState(() {
       _isLoading = true;
-      _allItems = [];
+      if (forceRefresh) _allItems = [];
     });
 
-    final url = Uri.parse(
-      'http://www.kamis.or.kr/service/price/xml.do'
-      '?action=dailySalesList'
-      '&p_cert_key=$kKamisCertKey'
-      '&p_cert_id=$kKamisCertId'
-      '&p_returntype=json',
-    );
-
     try {
-      final response = await http.get(url).timeout(const Duration(seconds: 15));
-
-      if (response.statusCode != 200) {
-        if (!mounted) return;
-        setState(() => _isLoading = false);
-        return;
-      }
-
-      final data = jsonDecode(response.body);
-      final priceData = data['price'];
-
-      if (priceData == null || priceData is! List) {
-        if (!mounted) return;
-        setState(() => _isLoading = false);
-        return;
-      }
-
-      final filtered = priceData
-          .cast<Map<String, dynamic>>()
-          .where((item) {
-            final clsCode = item['product_cls_code']?.toString() ?? '';
-            return clsCode == '01';
-          })
-          .where((item) {
-            final dpr1 = item['dpr1']?.toString().replaceAll(',', '');
-            return dpr1 != null && dpr1 != '-' && dpr1.isNotEmpty;
-          })
-          .toList();
-
-      final seen = <String>{};
-      final unique = <Map<String, dynamic>>[];
-      for (final item in filtered) {
-        final displayName = _getDisplayName(item);
-        if (!seen.contains(displayName)) {
-          seen.add(displayName);
-          unique.add(item);
-        }
-      }
-
+      final items = await _kamisCache.getDailyItems(forceRefresh: forceRefresh);
       if (!mounted) return;
       setState(() {
-        _allItems = unique;
+        _allItems = items;
         _isLoading = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() => _isLoading = false);
       debugPrint('KAMIS API 오류: $e');
+      _showSnack('가격 정보를 불러오지 못했어요');
     }
   }
 
   double _calcDiscount(Map<String, dynamic> item) {
-    final current = double.tryParse(
-      item['dpr1'].toString().replaceAll(',', ''),
-    );
-    final base = double.tryParse(
-      item[_comparisonBase].toString().replaceAll(',', ''),
-    );
+    final dpr1Str = item['dpr1']?.toString().replaceAll(',', '') ?? '';
+    final baseStr = item[_comparisonBase]?.toString().replaceAll(',', '') ?? '';
+    final current = double.tryParse(dpr1Str);
+    final base = double.tryParse(baseStr);
     if (current == null || base == null || base == 0) return 0;
     return ((base - current) / base) * 100;
   }
@@ -182,7 +122,7 @@ class _ShoppingScreenState extends State<ShoppingScreen>
 
     if (_searchQuery.isNotEmpty) {
       items = items.where((item) {
-        final displayName = _getDisplayName(item).toLowerCase();
+        final displayName = ProductNameFormatter.format(item).toLowerCase();
         return displayName.contains(_searchQuery.toLowerCase());
       }).toList();
     }
@@ -222,45 +162,11 @@ class _ShoppingScreenState extends State<ShoppingScreen>
 
     if (_cartService.contains(_cartKeys, productNo, productName)) {
       await _cartService.remove(productNo, productName);
-      _showSnack('${_getDisplayName(item)} 장바구니에서 제거됨');
+      _showSnack('${ProductNameFormatter.format(item)} 장바구니에서 제거됨');
     } else {
       await _cartService.add(productNo, productName);
-      _showSnack('${_getDisplayName(item)} 장바구니에 담김');
+      _showSnack('${ProductNameFormatter.format(item)} 장바구니에 담김');
     }
-  }
-
-  String _getDisplayName(Map<String, dynamic> item) {
-    final productNameRaw = item['productName']?.toString() ?? '';
-    final categoryCode = item['category_code']?.toString() ?? '';
-    // 매핑 테이블 우선
-    if (_nameOverride.containsKey(productNameRaw)) {
-      return _nameOverride[productNameRaw]!;
-    }
-    if (productNameRaw.isEmpty) {
-      return item['item_name']?.toString() ?? '';
-    }
-
-    final parts = productNameRaw.split('/');
-    if (parts.length == 2) {
-      final front = parts[0].trim();
-      final back = parts[1].trim();
-      // 앞 단어 제거 대상이면 뒤만
-      if (_stripPrefix.contains(front)) return back;
-      // 뒤에 앞이 포함되면 뒤만 콩/흰 콩(국산) → 흰 콩(국산)
-      if (back.contains(front)) return back;
-      // 축산물(500)은 슬래시를 공백으로
-      if (categoryCode == '500') {
-        return '$front $back';
-      }
-      // 백색(국산) → 백색)(국산 으로 변환해서 참깨(백색)(국산) 형태로
-      if (back.contains('(')) {
-        final cleaned = back.replaceFirst('(', ')(');
-        return '$front($cleaned';
-      }
-      // 그 외는 슬래시를 괄호로 감싸기 (참깨/백색(국산) → 참깨(백색(국산))
-      return '$front($back)';
-    }
-    return productNameRaw;
   }
 
   void _showFilterSheet() {
@@ -462,7 +368,7 @@ class _ShoppingScreenState extends State<ShoppingScreen>
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: '새로고침',
-            onPressed: _isLoading ? null : _fetchData,
+            onPressed: _isLoading ? null : () => _fetchData(forceRefresh: true),
           ),
         ],
       ),
@@ -504,8 +410,17 @@ class _ShoppingScreenState extends State<ShoppingScreen>
                               ? Colors.blue
                               : Colors.grey;
 
-                          final displayName = _getDisplayName(item);
+                          final displayName = ProductNameFormatter.format(item);
                           final basePrice = item[_comparisonBase];
+
+                          final productNo = item['productno']?.toString() ?? '';
+                          final productName =
+                              item['productName']?.toString() ?? '';
+                          final inCart = _cartService.contains(
+                            _cartKeys,
+                            productNo,
+                            productName,
+                          );
 
                           return Card(
                             margin: const EdgeInsets.symmetric(
@@ -559,21 +474,10 @@ class _ShoppingScreenState extends State<ShoppingScreen>
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(),
                                     icon: Icon(
-                                      _cartService.contains(
-                                            _cartKeys,
-                                            item['productno']?.toString() ?? '',
-                                            item['productName']?.toString() ??
-                                                '',
-                                          )
+                                      inCart
                                           ? Icons.check_circle
                                           : Icons.add_circle_outline,
-                                      color:
-                                          _cartService.contains(
-                                            _cartKeys,
-                                            item['productno']?.toString() ?? '',
-                                            item['productName']?.toString() ??
-                                                '',
-                                          )
+                                      color: inCart
                                           ? Colors.deepPurple
                                           : Colors.grey,
                                     ),

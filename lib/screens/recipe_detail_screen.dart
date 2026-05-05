@@ -164,7 +164,7 @@ ${widget.myIngredients}
         (widget.recipe['ATT_FILE_NO_MAIN'] ??
                 widget.recipe['MANUAL_IMG01'] ??
                 '')
-            as String;
+            .toString();
     final manuals = _getManuals();
 
     return Scaffold(

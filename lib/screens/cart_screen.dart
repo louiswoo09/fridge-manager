@@ -1,13 +1,10 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import '../services/cart_service.dart';
 import 'shopping_detail_screen.dart';
 import 'add_ingredient_screen.dart';
-
-const String kKamisCertKey = String.fromEnvironment('KAMIS_CERT_KEY');
-const String kKamisCertId = String.fromEnvironment('KAMIS_CERT_ID');
+import '../services/product_name_formatter.dart';
+import '../services/kamis_cache_service.dart';
 
 class ShoppingCartScreen extends StatefulWidget {
   const ShoppingCartScreen({super.key});
@@ -18,17 +15,11 @@ class ShoppingCartScreen extends StatefulWidget {
 
 class _ShoppingCartScreenState extends State<ShoppingCartScreen> {
   final CartService _cartService = CartService();
+  final KamisCacheService _kamisCache = KamisCacheService();
   bool _isLoading = true;
   Set<String> _cartKeys = {};
   List<Map<String, dynamic>> _allItems = [];
   StreamSubscription<List<String>>? _cartSubscription;
-
-  final Map<String, String> _nameOverride = {
-    '풋고추/풋고추(녹광 등)': '풋고추',
-    '고구마/밤': '밤고구마',
-  };
-
-  final List<String> _stripPrefix = ['풋고추'];
 
   @override
   void initState() {
@@ -56,46 +47,18 @@ class _ShoppingCartScreenState extends State<ShoppingCartScreen> {
   Future<void> _fetchData() async {
     setState(() => _isLoading = true);
 
-    final url = Uri.parse(
-      'http://www.kamis.or.kr/service/price/xml.do'
-      '?action=dailySalesList'
-      '&p_cert_key=$kKamisCertKey'
-      '&p_cert_id=$kKamisCertId'
-      '&p_returntype=json',
-    );
-
     try {
-      final response = await http.get(url).timeout(const Duration(seconds: 15));
-
-      if (response.statusCode != 200) {
-        if (!mounted) return;
-        setState(() => _isLoading = false);
-        return;
-      }
-
-      final data = jsonDecode(response.body);
-      final priceData = data['price'];
-
-      if (priceData == null || priceData is! List) {
-        if (!mounted) return;
-        setState(() => _isLoading = false);
-        return;
-      }
-
-      final filtered = priceData.cast<Map<String, dynamic>>().where((item) {
-        final clsCode = item['product_cls_code']?.toString() ?? '';
-        return clsCode == '01';
-      }).toList();
-
+      final items = await _kamisCache.getDailyItems();
       if (!mounted) return;
       setState(() {
-        _allItems = filtered;
+        _allItems = items;
         _isLoading = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() => _isLoading = false);
       debugPrint('KAMIS API 오류: $e');
+      _showSnack('가격 정보를 불러오지 못했어요');
     }
   }
 
@@ -104,7 +67,7 @@ class _ShoppingCartScreenState extends State<ShoppingCartScreen> {
     final productName = item['productName']?.toString() ?? '';
     if (productNo.isEmpty) return;
     await _cartService.remove(productNo, productName);
-    _showSnack('${_getDisplayName(item)} 장바구니에서 제거됨');
+    _showSnack('${ProductNameFormatter.format(item)} 장바구니에서 제거됨');
   }
 
   Future<void> _purchaseItem(Map<String, dynamic> item) async {
@@ -115,48 +78,16 @@ class _ShoppingCartScreenState extends State<ShoppingCartScreen> {
     final result = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            AddIngredientScreen(prefilledName: _getDisplayName(item)),
+        builder: (_) => AddIngredientScreen(
+          prefilledName: ProductNameFormatter.format(item),
+        ),
       ),
     );
 
     if (result == true && mounted) {
       await _cartService.remove(productNo, productName);
-      _showSnack('${_getDisplayName(item)} 보유 식재료에 추가됨');
+      _showSnack('${ProductNameFormatter.format(item)} 보유 식재료에 추가됨');
     }
-  }
-
-  String _getDisplayName(Map<String, dynamic> item) {
-    final productNameRaw = item['productName']?.toString() ?? '';
-    final categoryCode = item['category_code']?.toString() ?? '';
-
-    if (_nameOverride.containsKey(productNameRaw)) {
-      return _nameOverride[productNameRaw]!;
-    }
-    if (productNameRaw.isEmpty) {
-      return item['item_name']?.toString() ?? '';
-    }
-
-    final parts = productNameRaw.split('/');
-    if (parts.length == 2) {
-      final front = parts[0].trim();
-      final back = parts[1].trim();
-
-      if (_stripPrefix.contains(front)) return back;
-      if (back.contains(front)) return back;
-
-      if (categoryCode == '500') {
-        return '$front $back';
-      }
-
-      if (back.contains('(')) {
-        final cleaned = back.replaceFirst('(', ')(');
-        return '$front($cleaned';
-      }
-
-      return '$front($back)';
-    }
-    return productNameRaw;
   }
 
   List<Map<String, dynamic>> get _cartItems {
@@ -181,7 +112,7 @@ class _ShoppingCartScreenState extends State<ShoppingCartScreen> {
               itemCount: cartItems.length,
               itemBuilder: (context, index) {
                 final item = cartItems[index];
-                final displayName = _getDisplayName(item);
+                final displayName = ProductNameFormatter.format(item);
 
                 return Card(
                   margin: const EdgeInsets.symmetric(
