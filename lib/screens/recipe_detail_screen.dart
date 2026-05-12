@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import '../models/recipe_mode.dart';
 import '../services/gemini_cache_service.dart';
 import '../services/product_name_formatter.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 const String kGeminiApiKey = String.fromEnvironment('GEMINI_API_KEY');
 
@@ -401,12 +402,14 @@ $ownedSection$cartSection$imminentSection
             if (imageUrl.isNotEmpty)
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: Image.network(
-                  imageUrl,
+                child: CachedNetworkImage(
+                  imageUrl: imageUrl,
                   width: double.infinity,
-                  height: 200,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                  height: 250,
+                  fit: BoxFit.contain, // cover → contain
+                  placeholder: (context, url) =>
+                      Container(height: 250, color: Colors.grey.shade200),
+                  errorWidget: (context, url, error) => const SizedBox.shrink(),
                 ),
               ),
             const SizedBox(height: 16),

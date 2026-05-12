@@ -10,6 +10,7 @@ import '../services/cart_service.dart';
 import '../services/recipe_list_cache_service.dart';
 import 'recipe_detail_screen.dart';
 import '../services/product_name_formatter.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 const String kFoodApiKey = String.fromEnvironment('FOOD_API_KEY');
 
@@ -31,7 +32,8 @@ class RecipeScreenState extends State<RecipeScreen> {
   Set<String> _selectedIngredientNames = {}; // 선택된 재료 이름
   bool _isRandomSelected = false;
   bool _isSelectionExpanded = true; // 재료 선택 영역 펼침/접기
-  static const int _maxSelection = 2;
+  static const int _maxSelection = 3;
+  static const int _maxSequentialSearches = 2;
 
   SearchType _searchType = SearchType.ingredient;
   String _searchKeyword = '';
@@ -50,10 +52,28 @@ class RecipeScreenState extends State<RecipeScreen> {
   bool _isFetching = false;
   bool _hasSearched = false;
   String _searchedKeywords = '';
+  String? _resultFilterKeyword; // null = 전체 표시
 
   bool _isIgnored(String name) {
     const ignore = {'소금', '설탕', '후추', '기름', '간장'};
     return ignore.any((e) => name.contains(e));
+  }
+
+  /// 요리 스타일 키워드에서 노이즈 단어 제거
+  /// 예: "국물 요리" → "국물", "한식 음식" → "한식"
+  String _normalizeStyleKeyword(String raw) {
+    var cleaned = raw.trim();
+    const suffixes = ['요리', '음식', '레시피', '메뉴'];
+    for (final suffix in suffixes) {
+      if (cleaned.endsWith(' $suffix')) {
+        cleaned = cleaned
+            .substring(0, cleaned.length - suffix.length - 1)
+            .trim();
+      } else if (cleaned.endsWith(suffix) && cleaned.length > suffix.length) {
+        cleaned = cleaned.substring(0, cleaned.length - suffix.length).trim();
+      }
+    }
+    return cleaned;
   }
 
   /// D-3 이내 + 만료 안 된 재료 (가까운 순)
@@ -152,6 +172,7 @@ class RecipeScreenState extends State<RecipeScreen> {
   }
 
   void _restoreCachedResult() {
+    _resultFilterKeyword = null;
     if (_listCache.hasResult(_currentMode, _fridgeFilter)) {
       _recipes = _listCache.recipes(_currentMode, _fridgeFilter);
       _searchedKeywords = _listCache.searchedKeywords(
@@ -195,6 +216,7 @@ class RecipeScreenState extends State<RecipeScreen> {
     if (mode == _currentMode) return;
     setState(() {
       _currentMode = mode;
+      _resultFilterKeyword = null;
       _syncSelection(); // 표시 안 되는 재료는 선택에서 빼기
       _restoreCachedResult();
     });
@@ -204,6 +226,7 @@ class RecipeScreenState extends State<RecipeScreen> {
     if (filter == null || filter == _fridgeFilter) return;
     setState(() {
       _fridgeFilter = filter;
+      _resultFilterKeyword = null;
       _syncSelection();
       _restoreCachedResult();
     });
@@ -212,7 +235,7 @@ class RecipeScreenState extends State<RecipeScreen> {
   /// 재료명 기반 검색
   Future<List<Map<String, dynamic>>> _search(String keyword) async {
     final url = Uri.parse(
-      'https://openapi.foodsafetykorea.go.kr/api/$kFoodApiKey/COOKRCP01/json/1/8/RCP_PARTS_DTLS=${Uri.encodeComponent(keyword)}',
+      'https://openapi.foodsafetykorea.go.kr/api/$kFoodApiKey/COOKRCP01/json/1/20/RCP_PARTS_DTLS=${Uri.encodeComponent(keyword)}',
     );
 
     debugPrint('검색 키워드: $keyword');
@@ -300,11 +323,18 @@ class RecipeScreenState extends State<RecipeScreen> {
       return;
     }
 
-    final keyword = _searchKeyword.trim();
-    if (keyword.isEmpty) {
+    final raw = _searchKeyword.trim();
+    if (raw.isEmpty) {
       _showSnack('검색어를 입력하세요');
       return;
     }
+
+    // 쉼표로 분리 (있으면 다중 검색, 없으면 단일)
+    final keywords = raw
+        .split(',')
+        .map((k) => _normalizeStyleKeyword(k))
+        .where((k) => k.isNotEmpty)
+        .toList();
 
     setState(() {
       _isFetching = true;
@@ -314,29 +344,34 @@ class RecipeScreenState extends State<RecipeScreen> {
     });
 
     try {
-      final results = _searchType == SearchType.ingredient
-          ? await _search(keyword)
-          : await _searchByName(keyword);
-
       final unique = <String, Map<String, dynamic>>{};
-      _addToUnique(unique, results);
+
+      // 각 키워드별 검색 (검색 타입에 따라 분기)
+      for (final keyword in keywords) {
+        final results = _searchType == SearchType.ingredient
+            ? await _search(keyword)
+            : await _searchByName(keyword);
+        _addToUnique(unique, results);
+      }
 
       if (!mounted) return;
 
       final finalRecipes = unique.values.toList();
+      final finalKeywords = keywords.join(', ');
 
       _listCache.save(
         mode: _currentMode,
         filter: _fridgeFilter,
         searchType: _searchType,
         recipes: finalRecipes,
-        searchedKeywords: keyword,
+        searchedKeywords: finalKeywords,
       );
 
       setState(() {
         _recipes = finalRecipes;
         _hasSearched = true;
-        _searchedKeywords = keyword;
+        _searchedKeywords = finalKeywords;
+        _resultFilterKeyword = null;
       });
     } on TimeoutException {
       if (!mounted) return;
@@ -459,21 +494,6 @@ class RecipeScreenState extends State<RecipeScreen> {
       final unique = <String, Map<String, dynamic>>{};
       final usedKeywords = <String>[];
 
-      // 복합 검색
-      if (selected.length >= 2) {
-        final combined = selected.join(' ');
-        final results = await _search(combined);
-        final splitResults = results
-            .map((r) => {...r, 'searched_keywords': selected.toList()})
-            .toList();
-        _addToUnique(unique, splitResults);
-        if (results.isNotEmpty) {
-          for (final k in selected) {
-            if (!usedKeywords.contains(k)) usedKeywords.add(k);
-          }
-        }
-      }
-
       // 단일 검색
       for (final keyword in selected) {
         final results = await _search(keyword);
@@ -483,11 +503,19 @@ class RecipeScreenState extends State<RecipeScreen> {
         }
       }
 
-      // 10개 미만이면 순차 검색
-      if (unique.length < 10) {
-        final remaining = ordered.where((k) => !selected.contains(k)).toList();
-        for (final keyword in remaining.take(5)) {
-          if (unique.length >= 10) break;
+      // 순차 검색 — 시도한 키워드 추적
+      final List<String> sequentialTried = [];
+      if (_isRandomSelected && unique.length < 20) {
+        final remaining =
+            candidatePool.where((k) => !selected.contains(k)).toList()
+              ..shuffle();
+
+        int sequentialCount = 0;
+        for (final keyword in remaining) {
+          if (unique.length >= 30) break;
+          if (sequentialCount >= _maxSequentialSearches) break;
+          sequentialCount++;
+          sequentialTried.add(keyword);
           final results = await _search(keyword);
           _addToUnique(unique, results);
           if (results.isNotEmpty && !usedKeywords.contains(keyword)) {
@@ -496,13 +524,16 @@ class RecipeScreenState extends State<RecipeScreen> {
         }
       }
 
+      // 최종 키워드 = selected + 순차 시도된 키워드
+      final allTried = [...selected, ...sequentialTried];
+      final finalKeywords = allTried.join(', ');
+
       if (!mounted) return;
 
       final allRecipes = unique.values.toList();
       allRecipes.shuffle();
 
-      final finalRecipes = allRecipes.take(20).toList();
-      final finalKeywords = usedKeywords.join(', ');
+      final finalRecipes = allRecipes.take(60).toList();
 
       _listCache.save(
         mode: _currentMode,
@@ -515,6 +546,7 @@ class RecipeScreenState extends State<RecipeScreen> {
         _recipes = finalRecipes;
         _hasSearched = true;
         _searchedKeywords = finalKeywords;
+        _resultFilterKeyword = null;
       });
     } on TimeoutException {
       if (!mounted) return;
@@ -536,6 +568,48 @@ class RecipeScreenState extends State<RecipeScreen> {
         setState(() => _isFetching = false);
       }
     }
+  }
+
+  Future<void> searchByMultipleKeywords(List<String> keywords) async {
+    final cleaned = keywords
+        .map((k) => _normalizeStyleKeyword(k))
+        .where((k) => k.isNotEmpty)
+        .toList();
+
+    if (cleaned.isEmpty) return;
+
+    final keywordString = cleaned.join(', ');
+
+    setState(() {
+      _currentMode = RecipeMode.search;
+      _searchType = SearchType.recipeName;
+      _searchKeyword = keywordString;
+      _searchController.text = keywordString;
+    });
+
+    await _fetchSearchRecipes();
+  }
+
+  List<Map<String, dynamic>> get _filteredRecipes {
+    if (_resultFilterKeyword == null) return _recipes;
+    return _recipes.where((r) {
+      final keywords = (r['searched_keywords'] as List?)?.cast<String>() ?? [];
+      return keywords.contains(_resultFilterKeyword);
+    }).toList();
+  }
+
+  List<String> get _resultKeywords {
+    // _searchedKeywords를 콤마로 분리
+    return _searchedKeywords
+        .split(',')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+  }
+
+  bool get _showResultFilterChips {
+    // 검색 완료 + 키워드 2개 이상이면 칩 표시
+    return _hasSearched && _resultKeywords.length > 1 && _recipes.isNotEmpty;
   }
 
   bool get _canFetch {
@@ -574,9 +648,13 @@ class RecipeScreenState extends State<RecipeScreen> {
   }
 
   String get _emptyMessage {
-    // 검색 끝났는데 결과 없음
-    if (_hasSearched) return '추천할 레시피가 없습니다';
-
+    if (_hasSearched) {
+      // 필터 켜서 0개면 다른 안내
+      if (_resultFilterKeyword != null) {
+        return '$_resultFilterKeyword 결과가 없습니다';
+      }
+      return '추천할 레시피가 없습니다';
+    }
     // 빈 상태별 안내
     if (_currentMode == RecipeMode.shopping && _cartIngredientNames.isEmpty) {
       return '장바구니에 재료가 없어요';
@@ -591,7 +669,7 @@ class RecipeScreenState extends State<RecipeScreen> {
       }
     }
     if (_currentMode == RecipeMode.search) {
-      return '검색어를 입력해 레시피를 추천받으세요'; // 추가
+      return '검색어를 입력해 레시피를 추천받으세요';
     }
     // 기본 — 검색 안 함 + 재료 있는 상태
     return '식재료를 선택해 레시피를 추천받으세요';
@@ -935,15 +1013,70 @@ class RecipeScreenState extends State<RecipeScreen> {
                       style: const TextStyle(color: Colors.grey),
                     ),
                   ),
+                // 결과 필터 칩
+                if (_showResultFilterChips)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: SizedBox(
+                      height: 36,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        children: [
+                          // "전체" 칩
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: FilterChip(
+                              label: Text('전체 (${_recipes.length})'),
+                              selected: _resultFilterKeyword == null,
+                              onSelected: (_) =>
+                                  setState(() => _resultFilterKeyword = null),
+                              visualDensity: VisualDensity.compact,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                            ),
+                          ),
+                          // 키워드별 칩
+                          ..._resultKeywords.map((keyword) {
+                            final count = _recipes.where((r) {
+                              final ks =
+                                  (r['searched_keywords'] as List?)
+                                      ?.cast<String>() ??
+                                  [];
+                              return ks.contains(keyword);
+                            }).length;
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: FilterChip(
+                                label: Text('$keyword ($count)'),
+                                selected: _resultFilterKeyword == keyword,
+                                onSelected: count == 0
+                                    ? null
+                                    : (_) => setState(() {
+                                        _resultFilterKeyword =
+                                            _resultFilterKeyword == keyword
+                                            ? null
+                                            : keyword;
+                                      }),
+                                visualDensity: VisualDensity.compact,
+                                materialTapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                    ),
+                  ),
                 Expanded(
                   child: _isFetching
                       ? const Center(child: CircularProgressIndicator())
-                      : _recipes.isEmpty
+                      : _filteredRecipes
+                            .isEmpty // _recipes → _filteredRecipes
                       ? Center(child: Text(_emptyMessage))
                       : ListView.builder(
-                          itemCount: _recipes.length,
+                          itemCount: _filteredRecipes.length,
                           itemBuilder: (context, index) {
-                            final recipe = _recipes[index];
+                            final recipe = _filteredRecipes[index];
                             final imageUrl =
                                 (recipe['ATT_FILE_NO_MAIN'] ??
                                         recipe['MANUAL_IMG01'] ??
@@ -965,15 +1098,26 @@ class RecipeScreenState extends State<RecipeScreen> {
                                 leading: imageUrl.isNotEmpty
                                     ? ClipRRect(
                                         borderRadius: BorderRadius.circular(8),
-                                        child: Image.network(
-                                          imageUrl,
+                                        child: CachedNetworkImage(
+                                          imageUrl: imageUrl,
                                           width: 60,
                                           height: 60,
                                           fit: BoxFit.cover,
-                                          errorBuilder: (_, _, _) => const Icon(
-                                            Icons.restaurant,
-                                            size: 40,
-                                          ),
+                                          memCacheWidth: 120,
+                                          memCacheHeight: 120,
+                                          placeholder: (context, url) =>
+                                              Container(
+                                                width: 60,
+                                                height: 60,
+                                                color: Colors.grey.shade200,
+                                              ),
+                                          errorWidget: (context, url, error) {
+                                            debugPrint('이미지 에러: $url, $error');
+                                            return const Icon(
+                                              Icons.restaurant,
+                                              size: 40,
+                                            );
+                                          },
                                         ),
                                       )
                                     : const Icon(Icons.restaurant, size: 40),

@@ -9,6 +9,7 @@ import 'services/notification_service.dart';
 import 'screens/shopping_screen.dart';
 import 'models/recipe_mode.dart';
 
+typedef OnRequestRecipeKeywordSearch = void Function(List<String> keywords);
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
@@ -51,8 +52,15 @@ class _MainScreenState extends State<MainScreen> {
     setState(() => _currentIndex = 1);
   }
 
+  void _switchToRecipeKeywordSearch(List<String> keywords) {
+    setState(() => _currentIndex = 1);
+    _recipeKey.currentState?.searchByMultipleKeywords(keywords);
+  }
+
   late final List<Widget> _screens = [
-    const IngredientListScreen(),
+    IngredientListScreen(
+      onRequestRecipeKeywordSearch: _switchToRecipeKeywordSearch,
+    ),
     RecipeScreen(key: _recipeKey),
     ShoppingScreen(onRequestRecipe: _switchToRecipeWithMode),
   ];
@@ -60,18 +68,12 @@ class _MainScreenState extends State<MainScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
-      ),
+      body: IndexedStack(index: _currentIndex, children: _screens),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) => setState(() => _currentIndex = index),
         items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.kitchen),
-            label: '냉장고',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.kitchen), label: '냉장고'),
           BottomNavigationBarItem(
             icon: Icon(Icons.restaurant_menu),
             label: '레시피 추천',
