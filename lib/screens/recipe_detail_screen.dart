@@ -12,14 +12,18 @@ class RecipeDetailScreen extends StatefulWidget {
   final Map<String, dynamic> recipe;
   final List<String> ownedIngredients;
   final List<String> extraIngredients;
+  final List<String> imminentIngredients;
   final RecipeMode mode;
+  final FridgeFilter fridgeFilter;
 
   const RecipeDetailScreen({
     super.key,
     required this.recipe,
     required this.ownedIngredients,
     this.extraIngredients = const [],
+    this.imminentIngredients = const [],
     this.mode = RecipeMode.fridge,
+    this.fridgeFilter = FridgeFilter.all,
   });
 
   @override
@@ -27,15 +31,31 @@ class RecipeDetailScreen extends StatefulWidget {
 }
 
 class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
+  static final Map<String, (RecipeMode, FridgeFilter)> _lastViewByRecipe = {};
   bool _isGeminiLoading = false;
   String? _geminiResult;
   final GeminiCacheService _geminiCache = GeminiCacheService();
   late RecipeMode _currentMode;
+  late FridgeFilter _fridgeFilter;
 
   @override
   void initState() {
     super.initState();
-    _currentMode = widget.mode;
+
+    final recipeId =
+        widget.recipe['RCP_SEQ']?.toString() ??
+        widget.recipe['RCP_NM']?.toString() ??
+        '';
+
+    final last = _lastViewByRecipe[recipeId];
+    if (last != null) {
+      _currentMode = last.$1;
+      _fridgeFilter = last.$2;
+    } else {
+      _currentMode = widget.mode;
+      _fridgeFilter = widget.fridgeFilter;
+    }
+
     _restoreCachedResult();
   }
 
@@ -59,6 +79,32 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     });
   }
 
+  void _onFilterChanged(FridgeFilter? filter) {
+    if (filter == null || filter == _fridgeFilter) return;
+    setState(() {
+      _fridgeFilter = filter;
+      _restoreCachedResult();
+    });
+    _saveCurrentView();
+  }
+
+  void setMode(RecipeMode mode) {
+    if (mode == _currentMode) return;
+    setState(() {
+      _currentMode = mode;
+      _restoreCachedResult();
+    });
+    _saveCurrentView();
+  }
+
+  void _saveCurrentView() {
+    final recipeId =
+        widget.recipe['RCP_SEQ']?.toString() ??
+        widget.recipe['RCP_NM']?.toString() ??
+        '';
+    _lastViewByRecipe[recipeId] = (_currentMode, _fridgeFilter);
+  }
+
   List<String> _getManuals() {
     final manuals = <String>[];
     for (int i = 1; i <= 20; i++) {
@@ -76,7 +122,15 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
         widget.recipe['RCP_SEQ']?.toString() ??
         widget.recipe['RCP_NM']?.toString() ??
         '';
-    return '${_currentMode.name}|$recipeId';
+
+    // 필터가 임박이면 캐시 키 분리 (전체 변형이랑 다른 결과)
+    final filterPart =
+        (_currentMode == RecipeMode.fridge &&
+            _fridgeFilter == FridgeFilter.imminent)
+        ? '|imminent'
+        : '';
+
+    return '${_currentMode.name}|$recipeId$filterPart';
   }
 
   String _buildPrompt() {
@@ -91,6 +145,11 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
         .toList();
 
     final cleanedExtra = widget.extraIngredients
+        .map(ProductNameFormatter.toSearchKeyword)
+        .where((name) => name.isNotEmpty)
+        .toList();
+
+    final cleanedImminent = widget.imminentIngredients
         .map(ProductNameFormatter.toSearchKeyword)
         .where((name) => name.isNotEmpty)
         .toList();
@@ -111,6 +170,20 @@ ${cleanedOwned.join(', ')}''';
 ${cleanedExtra.join(', ')}
 
 위 두 목록의 재료를 모두 사용 가능한 것으로 간주하되, [장바구니] 재료는 사용자가 일부러 선택한 재료이므로 가능하면 적극적으로 활용해줘.'''
+        : '';
+
+    // 임박 재료 섹션 — imminent 모드 + 비어있지 않을 때만 추가
+    final imminentSection =
+        (_currentMode == RecipeMode.fridge &&
+            _fridgeFilter == FridgeFilter.imminent &&
+            cleanedImminent.isNotEmpty)
+        ? '''
+
+[임박 재료 - 반드시 사용]
+${cleanedImminent.join(', ')}
+
+위 재료들은 유통기한이 임박해서 반드시 우선 활용해야 해. 가능한 한 [임박 재료]를 메인 재료로 사용하고, 부족한 부분은 [냉장고 속 재료]에서 보충해줘. 
+[임박 재료]는 구분하기 쉽도록 재료 뒤에 *임박 이라고 반드시 붙여줘. 예:(양파 1/2개 *임박).'''
         : '';
 
     return '''
@@ -164,7 +237,7 @@ $recipeIngredients
 [주어진 레시피 조리법]
 $manuals
 
-$ownedSection$cartSection
+$ownedSection$cartSection$imminentSection
 ''';
   }
 
@@ -179,6 +252,11 @@ $ownedSection$cartSection
     if (_currentMode == RecipeMode.fridge) {
       if (widget.ownedIngredients.isEmpty) {
         _showSnack('냉장고가 비어있어요. 먼저 식재료를 등록해주세요.');
+        return;
+      }
+      if (_fridgeFilter == FridgeFilter.imminent &&
+          widget.imminentIngredients.isEmpty) {
+        _showSnack('3일 이내 임박한 재료가 없어요');
         return;
       }
     } else if (_currentMode == RecipeMode.shopping) {
@@ -214,55 +292,87 @@ $ownedSection$cartSection
     );
 
     final prompt = _buildPrompt();
+    final body = jsonEncode({
+      "contents": [
+        {
+          "parts": [
+            {"text": prompt},
+          ],
+        },
+      ],
+    });
 
     try {
-      final response = await http
-          .post(
-            url,
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              "contents": [
-                {
-                  "parts": [
-                    {"text": prompt},
-                  ],
-                },
-              ],
-            }),
-          )
-          .timeout(const Duration(seconds: 60));
+      int? errorCode;
+      String? errorDetail;
+      const maxAttempts = 3;
+      const delays = [Duration(seconds: 1), Duration(seconds: 3)];
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final candidates = data['candidates'];
-        if (candidates == null || candidates.isEmpty) {
-          throw Exception('응답 없음');
-        }
-        final parts = candidates[0]['content']?['parts'];
-        if (parts == null || parts.isEmpty) {
-          throw Exception('parts 없음');
-        }
-        final text = parts[0]['text'];
-        if (text == null || text.trim().isEmpty) {
-          setState(() => _geminiResult = '추천 결과가 없습니다.');
-          return;
-        }
-        if (!mounted) return;
+      for (int attempt = 0; attempt < maxAttempts; attempt++) {
+        try {
+          final response = await http
+              .post(
+                url,
+                headers: {'Content-Type': 'application/json'},
+                body: body,
+              )
+              .timeout(const Duration(seconds: 60));
 
-        // 캐시 저장
-        _geminiCache.put(cacheKey, text);
-        setState(() => _geminiResult = text);
-      } else {
-        debugPrint('Gemini 실패: ${response.body}');
-        _showSnack('AI 응답 오류가 발생했습니다');
+          if (response.statusCode == 200) {
+            final data = jsonDecode(response.body);
+            final candidates = data['candidates'];
+            if (candidates == null || candidates.isEmpty) {
+              throw Exception('응답 없음');
+            }
+            final parts = candidates[0]['content']?['parts'];
+            if (parts == null || parts.isEmpty) {
+              throw Exception('parts 없음');
+            }
+            final text = parts[0]['text'];
+            if (text == null || text.trim().isEmpty) {
+              if (mounted) setState(() => _geminiResult = '추천 결과가 없습니다.');
+              return;
+            }
+            if (!mounted) return;
+            _geminiCache.put(cacheKey, text);
+            setState(() => _geminiResult = text);
+            return;
+          }
+
+          errorCode = response.statusCode;
+          debugPrint(
+            'Gemini 실패 (status=$errorCode, attempt=${attempt + 1}): ${response.body}',
+          );
+
+          // 5xx 또는 429만 재시도
+          final shouldRetry =
+              (errorCode >= 500 || errorCode == 429) &&
+              attempt < maxAttempts - 1;
+          if (!shouldRetry) break;
+          await Future.delayed(delays[attempt]);
+        } on TimeoutException {
+          errorDetail = 'timeout';
+          debugPrint('Gemini timeout (attempt=${attempt + 1})');
+          if (attempt < maxAttempts - 1) {
+            await Future.delayed(delays[attempt]);
+            continue;
+          }
+          break;
+        }
       }
-    } on TimeoutException {
+
+      // 모든 시도 실패
       if (!mounted) return;
-      _showSnack('요청 시간이 초과되었습니다');
+      final msg = errorDetail == 'timeout'
+          ? '요청 시간이 초과되었습니다'
+          : (errorCode != null
+                ? 'AI 응답 오류 (코드 $errorCode)'
+                : 'AI 응답 오류가 발생했습니다');
+      _showSnack(msg);
     } catch (e) {
       if (!mounted) return;
       _showSnack('AI 응답 오류가 발생했습니다');
-      debugPrint(e.toString());
+      debugPrint('Gemini 예외: $e');
     } finally {
       if (mounted) {
         setState(() => _isGeminiLoading = false);
@@ -337,13 +447,14 @@ $ownedSection$cartSection
                 const Icon(Icons.tune, size: 18, color: Colors.grey),
                 const SizedBox(width: 8),
                 const Text(
-                  '변형 모드',
+                  'AI 변형',
                   style: TextStyle(color: Colors.grey, fontSize: 13),
                 ),
                 const Spacer(),
               ],
             ),
             const SizedBox(height: 8),
+            // 변형 모드 토글
             SegmentedButton<RecipeMode>(
               segments: const [
                 ButtonSegment(
@@ -362,6 +473,44 @@ $ownedSection$cartSection
                   ? null
                   : (set) => _onModeChanged(set.first),
             ),
+
+            // 냉장고 모드일 때만 필터 드롭다운
+            if (_currentMode == RecipeMode.fridge) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Text(
+                    '모드: ',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w500,
+                      color: Colors.black,
+                      fontSize: 16,
+                    ),
+                  ),
+                  DropdownButton<FridgeFilter>(
+                    value: _fridgeFilter,
+                    underline: const SizedBox.shrink(),
+                    items: const [
+                      DropdownMenuItem(
+                        value: FridgeFilter.all,
+                        child: Text(
+                          '냉장고 전체',
+                          style: TextStyle(fontWeight: FontWeight.w300),
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: FridgeFilter.imminent,
+                        child: Text(
+                          '임박 우선',
+                          style: TextStyle(fontWeight: FontWeight.w300),
+                        ),
+                      ),
+                    ],
+                    onChanged: _isGeminiLoading ? null : _onFilterChanged,
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,

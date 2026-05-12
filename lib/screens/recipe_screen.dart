@@ -27,12 +27,23 @@ class RecipeScreenState extends State<RecipeScreen> {
   final CartService _cartService = CartService();
   final RecipeListCacheService _listCache = RecipeListCacheService();
 
+  static const int _imminentDaysThreshold = 3;
+  Set<String> _selectedIngredientNames = {}; // 선택된 재료 이름
+  bool _isRandomSelected = false;
+  bool _isSelectionExpanded = true; // 재료 선택 영역 펼침/접기
+  static const int _maxSelection = 2;
+
+  SearchType _searchType = SearchType.ingredient;
+  String _searchKeyword = '';
+  final TextEditingController _searchController = TextEditingController();
+
   late StreamSubscription<List<Ingredient>> _ingredientSub;
   StreamSubscription<List<String>>? _cartSub;
 
   late RecipeMode _currentMode;
+  FridgeFilter _fridgeFilter = FridgeFilter.all;
   List<Ingredient> _items = [];
-  List<String> _cartIngredientNames = []; // 장바구니 재료 이름 (shopping 모드용)
+  List<String> _cartIngredientNames = [];
 
   List<Map<String, dynamic>> _recipes = [];
   bool _isLoading = true;
@@ -41,8 +52,73 @@ class RecipeScreenState extends State<RecipeScreen> {
   String _searchedKeywords = '';
 
   bool _isIgnored(String name) {
-    const ignore = {'물', '소금', '설탕', '후추', '기름', '간장'};
+    const ignore = {'소금', '설탕', '후추', '기름', '간장'};
     return ignore.any((e) => name.contains(e));
+  }
+
+  /// D-3 이내 + 만료 안 된 재료 (가까운 순)
+  List<Ingredient> get _imminentIngredients {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final threshold = today.add(const Duration(days: _imminentDaysThreshold));
+
+    return _items.where((item) {
+      if (_isIgnored(item.name.trim())) return false;
+      final exp = DateTime(
+        item.expirationDate.year,
+        item.expirationDate.month,
+        item.expirationDate.day,
+      );
+      return !exp.isBefore(today) && !exp.isAfter(threshold);
+    }).toList()..sort((a, b) => a.expirationDate.compareTo(b.expirationDate));
+  }
+
+  List<String> get _displayedIngredientNames {
+    switch (_currentMode) {
+      case RecipeMode.shopping:
+        return _cartIngredientNames;
+      case RecipeMode.fridge:
+        final source = _fridgeFilter == FridgeFilter.imminent
+            ? _imminentIngredients
+            : _notExpiredItems;
+        return source.map((e) => e.name).toList();
+      case RecipeMode.search:
+      case RecipeMode.free:
+        return const [];
+    }
+  }
+
+  int get _totalSelectedCount =>
+      _selectedIngredientNames.length + (_isRandomSelected ? 1 : 0);
+
+  void _toggleIngredient(String name) {
+    setState(() {
+      if (_selectedIngredientNames.contains(name)) {
+        _selectedIngredientNames.remove(name);
+      } else {
+        // 2개 제한
+        if (_totalSelectedCount >= _maxSelection) return;
+        _selectedIngredientNames.add(name);
+      }
+    });
+  }
+
+  void _toggleRandom() {
+    setState(() {
+      if (_isRandomSelected) {
+        _isRandomSelected = false;
+      } else {
+        if (_totalSelectedCount >= _maxSelection) return;
+        _isRandomSelected = true;
+      }
+    });
+  }
+
+  void _syncSelection() {
+    final displayed = _displayedIngredientNames.toSet();
+    // 표시 안 되는 거 제거
+    _selectedIngredientNames = _selectedIngredientNames.intersection(displayed);
+    // 자동 선택 X (사용자가 명시적으로 선택해야 함)
   }
 
   void _showSnack(String msg) {
@@ -64,24 +140,40 @@ class RecipeScreenState extends State<RecipeScreen> {
       setState(() {
         _items = items;
         _isLoading = false;
+        _syncSelection();
       });
     });
 
     _cartSub = _cartService.watchDisplayNames().listen((names) {
       if (!mounted) return;
       setState(() => _cartIngredientNames = names);
+      _syncSelection();
     });
   }
 
   void _restoreCachedResult() {
-    if (_listCache.hasResult(_currentMode)) {
-      _recipes = _listCache.recipes(_currentMode);
-      _searchedKeywords = _listCache.searchedKeywords(_currentMode);
+    if (_listCache.hasResult(_currentMode, _fridgeFilter)) {
+      _recipes = _listCache.recipes(_currentMode, _fridgeFilter);
+      _searchedKeywords = _listCache.searchedKeywords(
+        _currentMode,
+        _fridgeFilter,
+      );
       _hasSearched = true;
+
+      // 검색 모드면 키워드를 입력 필드에 복원
+      if (_currentMode == RecipeMode.search) {
+        _searchKeyword = _searchedKeywords;
+        _searchController.text = _searchedKeywords;
+      }
     } else {
       _recipes = [];
       _searchedKeywords = '';
       _hasSearched = false;
+
+      if (_currentMode == RecipeMode.search) {
+        _searchKeyword = '';
+        _searchController.clear();
+      }
     }
   }
 
@@ -89,6 +181,7 @@ class RecipeScreenState extends State<RecipeScreen> {
   void dispose() {
     _ingredientSub.cancel();
     _cartSub?.cancel();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -97,20 +190,62 @@ class RecipeScreenState extends State<RecipeScreen> {
     setMode(mode);
   }
 
+  // 모드 바뀔 때 명시적으로 초기화
   void setMode(RecipeMode mode) {
     if (mode == _currentMode) return;
     setState(() {
       _currentMode = mode;
+      _syncSelection(); // 표시 안 되는 재료는 선택에서 빼기
       _restoreCachedResult();
     });
   }
 
+  void _onFilterChanged(FridgeFilter? filter) {
+    if (filter == null || filter == _fridgeFilter) return;
+    setState(() {
+      _fridgeFilter = filter;
+      _syncSelection();
+      _restoreCachedResult();
+    });
+  }
+
+  /// 재료명 기반 검색
   Future<List<Map<String, dynamic>>> _search(String keyword) async {
     final url = Uri.parse(
       'https://openapi.foodsafetykorea.go.kr/api/$kFoodApiKey/COOKRCP01/json/1/8/RCP_PARTS_DTLS=${Uri.encodeComponent(keyword)}',
     );
 
     debugPrint('검색 키워드: $keyword');
+
+    final response = await http.get(url).timeout(const Duration(seconds: 10));
+
+    if (response.statusCode != 200) return [];
+
+    final data = jsonDecode(response.body);
+    final cook = data['COOKRCP01'];
+    if (cook == null) return [];
+
+    final rows = (cook['row'] as List?)?.cast<Map<String, dynamic>>();
+    if (rows == null || rows.isEmpty) return [];
+
+    return rows
+        .map(
+          (r) => {
+            ...r,
+            'source': '식품의약품안전처',
+            'searched_keywords': [keyword],
+          },
+        )
+        .toList();
+  }
+
+  /// 요리명 기반 검색 (RCP_NM)
+  Future<List<Map<String, dynamic>>> _searchByName(String keyword) async {
+    final url = Uri.parse(
+      'https://openapi.foodsafetykorea.go.kr/api/$kFoodApiKey/COOKRCP01/json/1/20/RCP_NM=${Uri.encodeComponent(keyword)}',
+    );
+
+    debugPrint('요리명 검색: $keyword');
 
     final response = await http.get(url).timeout(const Duration(seconds: 10));
 
@@ -157,7 +292,7 @@ class RecipeScreenState extends State<RecipeScreen> {
     }
   }
 
-  Future<void> _fetchRecipes() async {
+  Future<void> _fetchSearchRecipes() async {
     if (_isFetching) return;
 
     if (kFoodApiKey.isEmpty) {
@@ -165,25 +300,153 @@ class RecipeScreenState extends State<RecipeScreen> {
       return;
     }
 
-    final searchPool = _currentMode == RecipeMode.shopping
-        ? _cartIngredientNames
-              .map((e) => ProductNameFormatter.toSearchKeyword(e.trim()))
-              .where((name) => name.isNotEmpty && !_isIgnored(name))
-        : _items
-              .map((e) => ProductNameFormatter.toSearchKeyword(e.name.trim()))
-              .where((name) => name.isNotEmpty && !_isIgnored(name));
+    final keyword = _searchKeyword.trim();
+    if (keyword.isEmpty) {
+      _showSnack('검색어를 입력하세요');
+      return;
+    }
 
-    final filtered = searchPool.toSet().toList();
+    setState(() {
+      _isFetching = true;
+      _recipes = [];
+      _hasSearched = false;
+      _searchedKeywords = '';
+    });
 
-    if (filtered.isEmpty) {
+    try {
+      final results = _searchType == SearchType.ingredient
+          ? await _search(keyword)
+          : await _searchByName(keyword);
+
+      final unique = <String, Map<String, dynamic>>{};
+      _addToUnique(unique, results);
+
+      if (!mounted) return;
+
+      final finalRecipes = unique.values.toList();
+
+      _listCache.save(
+        mode: _currentMode,
+        filter: _fridgeFilter,
+        searchType: _searchType,
+        recipes: finalRecipes,
+        searchedKeywords: keyword,
+      );
+
+      setState(() {
+        _recipes = finalRecipes;
+        _hasSearched = true;
+        _searchedKeywords = keyword;
+      });
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _recipes = [];
+        _hasSearched = true;
+      });
+      _showSnack('요청 시간이 초과되었습니다');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _recipes = [];
+        _hasSearched = true;
+      });
+      _showSnack('네트워크 오류가 발생했습니다');
+      debugPrint('검색 실패: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isFetching = false);
+      }
+    }
+  }
+
+  Future<void> _fetchRecipes() async {
+    if (_isFetching) return;
+
+    if (_currentMode == RecipeMode.search) {
+      return _fetchSearchRecipes();
+    }
+
+    if (kFoodApiKey.isEmpty) {
+      _showSnack('API 키가 설정되지 않았습니다');
+      return;
+    }
+
+    // 후보 풀: 모드/필터에 따른 전체 재료 (랜덤 칩 채울 때 사용)
+    final List<String> candidatePool;
+    switch (_currentMode) {
+      case RecipeMode.shopping:
+        candidatePool = _cartIngredientNames
+            .map((e) => ProductNameFormatter.toSearchKeyword(e.trim()))
+            .where((name) => name.isNotEmpty && !_isIgnored(name))
+            .toSet()
+            .toList();
+        break;
+      case RecipeMode.fridge:
+        final source = _fridgeFilter == FridgeFilter.imminent
+            ? _imminentIngredients
+            : _notExpiredItems;
+        candidatePool = source
+            .map((e) => ProductNameFormatter.toSearchKeyword(e.name.trim()))
+            .where((name) => name.isNotEmpty && !_isIgnored(name))
+            .toSet()
+            .toList();
+        break;
+      case RecipeMode.search:
+      case RecipeMode.free:
+        candidatePool = [];
+        break;
+    }
+
+    // 사용자가 명시적으로 선택한 키워드
+    final explicitKeywords = _selectedIngredientNames
+        .map((name) => ProductNameFormatter.toSearchKeyword(name.trim()))
+        .where((k) => k.isNotEmpty && !_isIgnored(k))
+        .toSet()
+        .toList();
+
+    // 빈 체크 — 명시 선택도 랜덤도 없으면 막음
+    if (explicitKeywords.isEmpty && !_isRandomSelected) {
       _showSnack(
-        _currentMode == RecipeMode.shopping ? '장바구니가 비어있어요' : '식재료를 먼저 등록하세요',
+        _currentMode == RecipeMode.shopping ? '장바구니 재료를 선택하세요' : '재료를 선택하세요',
       );
       return;
     }
 
-    final shuffled = List<String>.from(filtered)..shuffle();
-    final selected = shuffled.take(min(2, shuffled.length)).toList();
+    // 최종 검색 키워드 결정
+    List<String> ordered;
+    if (_isRandomSelected) {
+      // 랜덤 칩 선택됨: explicit + 랜덤으로 채움 (최대 _maxSelection 개)
+      final fillCount = _maxSelection - explicitKeywords.length;
+
+      if (_currentMode == RecipeMode.fridge &&
+          _fridgeFilter == FridgeFilter.imminent) {
+        // 임박 모드: 그룹핑 방식으로 채움
+        final imminentOrdered = _orderImminentByDateGroups(candidatePool);
+        final fill = imminentOrdered
+            .where((k) => !explicitKeywords.contains(k))
+            .take(fillCount)
+            .toList();
+        ordered = [...explicitKeywords, ...fill];
+      } else {
+        // 일반: 셔플로 채움
+        final remaining =
+            candidatePool.where((k) => !explicitKeywords.contains(k)).toList()
+              ..shuffle();
+        final fill = remaining.take(fillCount).toList();
+        ordered = [...explicitKeywords, ...fill];
+      }
+    } else {
+      // 랜덤 없음: 명시 선택만 사용
+      ordered = List<String>.from(explicitKeywords);
+    }
+
+    if (ordered.isEmpty) {
+      _showSnack('재료를 선택하세요');
+      return;
+    }
+
+    final selected = ordered.take(min(_maxSelection, ordered.length)).toList();
 
     setState(() {
       _isFetching = true;
@@ -222,8 +485,7 @@ class RecipeScreenState extends State<RecipeScreen> {
 
       // 10개 미만이면 순차 검색
       if (unique.length < 10) {
-        final remaining = shuffled.where((k) => !selected.contains(k)).toList();
-
+        final remaining = ordered.where((k) => !selected.contains(k)).toList();
         for (final keyword in remaining.take(5)) {
           if (unique.length >= 10) break;
           final results = await _search(keyword);
@@ -244,6 +506,7 @@ class RecipeScreenState extends State<RecipeScreen> {
 
       _listCache.save(
         mode: _currentMode,
+        filter: _fridgeFilter,
         recipes: finalRecipes,
         searchedKeywords: finalKeywords,
       );
@@ -276,19 +539,113 @@ class RecipeScreenState extends State<RecipeScreen> {
   }
 
   bool get _canFetch {
-    if (_currentMode == RecipeMode.shopping) {
-      return _cartIngredientNames.isNotEmpty;
+    switch (_currentMode) {
+      case RecipeMode.shopping:
+      case RecipeMode.fridge:
+        // 명시 선택 또는 랜덤 중 하나라도 있고, 후보 풀에 재료가 있어야 함
+        final hasSelection =
+            _selectedIngredientNames.isNotEmpty || _isRandomSelected;
+        final hasIngredients = _displayedIngredientNames.isNotEmpty;
+        return hasSelection && hasIngredients;
+      case RecipeMode.search:
+        return _searchKeyword.trim().isNotEmpty;
+      case RecipeMode.free:
+        return _notExpiredItems.isNotEmpty;
     }
-    return _items.isNotEmpty;
+  }
+
+  bool get _showChipSection {
+    if (_currentMode == RecipeMode.shopping) {
+      return _cartIngredientNames.isNotEmpty; // 추가
+    }
+    if (_currentMode == RecipeMode.fridge) {
+      // 전체 필터인데 보유 재료 없으면 숨김
+      if (_fridgeFilter == FridgeFilter.all && _notExpiredItems.isEmpty) {
+        return false;
+      }
+      // 임박 필터인데 임박 재료 없으면 숨김
+      if (_fridgeFilter == FridgeFilter.imminent &&
+          _imminentIngredients.isEmpty) {
+        return false;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  String get _emptyMessage {
+    // 검색 끝났는데 결과 없음
+    if (_hasSearched) return '추천할 레시피가 없습니다';
+
+    // 빈 상태별 안내
+    if (_currentMode == RecipeMode.shopping && _cartIngredientNames.isEmpty) {
+      return '장바구니에 재료가 없어요';
+    }
+    if (_currentMode == RecipeMode.fridge) {
+      if (_fridgeFilter == FridgeFilter.all && _notExpiredItems.isEmpty) {
+        return '냉장고에 재료가 없어요';
+      }
+      if (_fridgeFilter == FridgeFilter.imminent &&
+          _imminentIngredients.isEmpty) {
+        return '$_imminentDaysThreshold일 이내 임박한 재료가 없어요';
+      }
+    }
+    if (_currentMode == RecipeMode.search) {
+      return '검색어를 입력해 레시피를 추천받으세요'; // 추가
+    }
+    // 기본 — 검색 안 함 + 재료 있는 상태
+    return '식재료를 선택해 레시피를 추천받으세요';
+  }
+
+  /// 임박 모드에서 같은 D-day끼리 그룹핑 + 그룹 내 셔플
+  List<String> _orderImminentByDateGroups(List<String> candidatePool) {
+    final groups = <DateTime, List<String>>{};
+    for (final item in _imminentIngredients) {
+      final keyword = ProductNameFormatter.toSearchKeyword(item.name.trim());
+      if (keyword.isEmpty || _isIgnored(keyword)) continue;
+      if (!candidatePool.contains(keyword)) continue;
+      final dateKey = DateTime(
+        item.expirationDate.year,
+        item.expirationDate.month,
+        item.expirationDate.day,
+      );
+      groups.putIfAbsent(dateKey, () => []).add(keyword);
+    }
+    final sortedDates = groups.keys.toList()..sort();
+    final expanded = <String>[];
+    for (final date in sortedDates) {
+      final shuffledGroup = List<String>.from(groups[date]!)..shuffle();
+      expanded.addAll(shuffledGroup);
+    }
+    final seen = <String>{};
+    expanded.retainWhere((k) => seen.add(k));
+    return expanded;
+  }
+
+  List<Ingredient> get _notExpiredItems {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return _items.where((item) {
+      final exp = DateTime(
+        item.expirationDate.year,
+        item.expirationDate.month,
+        item.expirationDate.day,
+      );
+      return !exp.isBefore(today);
+    }).toList();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          _currentMode == RecipeMode.shopping ? '레시피 추천 (장보기 모드)' : '레시피 추천',
-        ),
+        title: Text(switch (_currentMode) {
+          RecipeMode.shopping => '장바구니 레시피 추천',
+          RecipeMode.search => '레시피 검색',
+          RecipeMode.fridge =>
+            _fridgeFilter == FridgeFilter.imminent ? '레시피 추천 (임박)' : '레시피 추천',
+          _ => '레시피 추천',
+        }),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -309,20 +666,267 @@ class RecipeScreenState extends State<RecipeScreen> {
                         label: Text('장바구니'),
                         icon: Icon(Icons.shopping_cart),
                       ),
+                      ButtonSegment(
+                        value: RecipeMode.search,
+                        label: Text('검색'),
+                        icon: Icon(Icons.search),
+                      ),
                     ],
                     selected: {_currentMode},
                     onSelectionChanged: (set) => _onModeChanged(set.first),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                  child: ElevatedButton(
-                    onPressed: (_isFetching || !_canFetch)
-                        ? null
-                        : _fetchRecipes,
-                    child: const Text('레시피 추천 받기'),
+                if (_currentMode == RecipeMode.fridge)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 0, 16, 0),
+                    child: Row(
+                      children: [
+                        const Text(
+                          '모드: ',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w500,
+                            color: Colors.black,
+                            fontSize: 16,
+                          ),
+                        ),
+                        DropdownButton<FridgeFilter>(
+                          value: _fridgeFilter,
+                          underline: const SizedBox.shrink(),
+                          items: const [
+                            DropdownMenuItem(
+                              value: FridgeFilter.all,
+                              child: Text(
+                                '냉장고 전체',
+                                style: TextStyle(fontWeight: FontWeight.w300),
+                              ),
+                            ),
+                            DropdownMenuItem(
+                              value: FridgeFilter.imminent,
+                              child: Text(
+                                '임박 우선',
+                                style: TextStyle(fontWeight: FontWeight.w300),
+                              ),
+                            ),
+                          ],
+                          onChanged: _onFilterChanged,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
+                // 칩 리스트 (냉장고/장바구니 모드만)
+                if (_showChipSection) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 0, 16, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // 헤더: 클릭하면 펼침/접힘
+                        InkWell(
+                          onTap: () => setState(
+                            () => _isSelectionExpanded = !_isSelectionExpanded,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              children: [
+                                Text(
+                                  '재료 선택 ($_totalSelectedCount/$_maxSelection)',
+                                  style: const TextStyle(
+                                    color: Colors.black,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Icon(
+                                  _isSelectionExpanded
+                                      ? Icons.expand_less
+                                      : Icons.expand_more,
+                                  size: 18,
+                                  color: Colors.grey,
+                                ),
+                                const Spacer(),
+                                if (_totalSelectedCount > 0)
+                                  TextButton(
+                                    onPressed: () => setState(() {
+                                      _selectedIngredientNames.clear();
+                                      _isRandomSelected = false;
+                                    }),
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                      ),
+                                      minimumSize: const Size(0, 28),
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                    child: const Text(
+                                      '해제',
+                                      style: TextStyle(fontSize: 12),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        // 펼쳤을 때만 칩 표시
+                        if (_isSelectionExpanded) ...[
+                          const SizedBox(height: 4),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: [
+                              // 랜덤 칩 (맨 앞)
+                              FilterChip(
+                                label: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.shuffle, size: 14),
+                                    SizedBox(width: 4),
+                                    Text('랜덤', style: TextStyle(fontSize: 13)),
+                                  ],
+                                ),
+                                selected: _isRandomSelected,
+                                onSelected: (_) => _toggleRandom(),
+                                materialTapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              // 일반 재료 칩
+                              ..._displayedIngredientNames.map((name) {
+                                final selected = _selectedIngredientNames
+                                    .contains(name);
+                                return FilterChip(
+                                  label: Text(
+                                    name,
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                  selected: selected,
+                                  onSelected: (_) => _toggleIngredient(name),
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                  visualDensity: VisualDensity.compact,
+                                );
+                              }),
+                            ],
+                          ),
+                          const SizedBox(height: 8), // 칩과 버튼 사이 여백
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: (_isFetching || !_canFetch)
+                                  ? null
+                                  : () {
+                                      setState(
+                                        () => _isSelectionExpanded = false,
+                                      ); // 자동 접힘
+                                      _fetchRecipes();
+                                    },
+                              child: const Text('레시피 추천 받기'),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+                if (_currentMode == RecipeMode.search) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // 검색 타입 토글
+                        Row(
+                          children: [
+                            const Text(
+                              '검색 기준: ',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w500,
+                                fontSize: 16,
+                                color: Colors.black,
+                              ),
+                            ),
+                            DropdownButton<SearchType>(
+                              value: _searchType,
+                              underline: const SizedBox.shrink(),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: SearchType.ingredient,
+                                  child: Text(
+                                    '재료명',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w300,
+                                    ),
+                                  ),
+                                ),
+                                DropdownMenuItem(
+                                  value: SearchType.recipeName,
+                                  child: Text(
+                                    '요리명',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w300,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              onChanged: (value) {
+                                if (value == null || value == _searchType) {
+                                  return;
+                                }
+                                setState(() {
+                                  _searchType = value;
+                                  // 타입 바뀌면 결과 비움 (다른 검색이니까)
+                                  _recipes = [];
+                                  _hasSearched = false;
+                                  _searchedKeywords = '';
+                                });
+                              },
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        TextField(
+                          controller: _searchController,
+                          decoration: InputDecoration(
+                            hintText: _searchType == SearchType.ingredient
+                                ? '재료명 입력'
+                                : '요리명 입력',
+                            prefixIcon: const Icon(
+                              Icons.search,
+                              color: Colors.grey,
+                            ),
+                            filled: true,
+                            fillColor: const Color.fromARGB(15, 158, 158, 158),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                            ),
+                          ),
+                          textInputAction: TextInputAction.search,
+                          onChanged: (v) => setState(() => _searchKeyword = v),
+                          onSubmitted: (_) {
+                            if (_canFetch && !_isFetching) {
+                              _fetchSearchRecipes();
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: (_isFetching || !_canFetch)
+                                ? null
+                                : _fetchSearchRecipes,
+                            child: const Text('검색'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 if (_hasSearched && _searchedKeywords.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
@@ -335,13 +939,7 @@ class RecipeScreenState extends State<RecipeScreen> {
                   child: _isFetching
                       ? const Center(child: CircularProgressIndicator())
                       : _recipes.isEmpty
-                      ? Center(
-                          child: Text(
-                            _hasSearched
-                                ? '추천할 레시피가 없습니다'
-                                : '버튼을 눌러 레시피를 추천받으세요',
-                          ),
-                        )
+                      ? Center(child: Text(_emptyMessage))
                       : ListView.builder(
                           itemCount: _recipes.length,
                           itemBuilder: (context, index) {
@@ -394,16 +992,22 @@ class RecipeScreenState extends State<RecipeScreen> {
                                 ),
                                 trailing: const Icon(Icons.chevron_right),
                                 onTap: () {
+                                  final imminentNames = _imminentIngredients
+                                      .map((e) => e.name)
+                                      .toList();
+
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
                                       builder: (_) => RecipeDetailScreen(
                                         recipe: recipe,
-                                        ownedIngredients: _items
+                                        ownedIngredients: _notExpiredItems
                                             .map((e) => e.name)
-                                            .toList(),
+                                            .toList(), // _items → _notExpiredItems
                                         extraIngredients: _cartIngredientNames,
+                                        imminentIngredients: imminentNames,
                                         mode: _currentMode,
+                                        fridgeFilter: _fridgeFilter,
                                       ),
                                     ),
                                   );
