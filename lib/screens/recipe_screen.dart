@@ -443,7 +443,7 @@ class RecipeScreenState extends State<RecipeScreen> {
     // 빈 체크 — 명시 선택도 랜덤도 없으면 막음
     if (explicitKeywords.isEmpty && !_isRandomSelected) {
       _showSnack(
-        _currentMode == RecipeMode.shopping ? '장바구니 재료를 선택하세요' : '재료를 선택하세요',
+        _currentMode == RecipeMode.shopping ? '담아놓기 재료를 선택하세요' : '재료를 선택하세요',
       );
       return;
     }
@@ -657,7 +657,7 @@ class RecipeScreenState extends State<RecipeScreen> {
     }
     // 빈 상태별 안내
     if (_currentMode == RecipeMode.shopping && _cartIngredientNames.isEmpty) {
-      return '장바구니에 재료가 없어요';
+      return '담아놓기에 재료가 없어요';
     }
     if (_currentMode == RecipeMode.fridge) {
       if (_fridgeFilter == FridgeFilter.all && _notExpiredItems.isEmpty) {
@@ -718,7 +718,7 @@ class RecipeScreenState extends State<RecipeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(switch (_currentMode) {
-          RecipeMode.shopping => '장바구니 레시피 추천',
+          RecipeMode.shopping => '담아놓기 레시피 추천',
           RecipeMode.search => '레시피 검색',
           RecipeMode.fridge =>
             _fridgeFilter == FridgeFilter.imminent ? '레시피 추천 (임박)' : '레시피 추천',
@@ -741,7 +741,7 @@ class RecipeScreenState extends State<RecipeScreen> {
                       ),
                       ButtonSegment(
                         value: RecipeMode.shopping,
-                        label: Text('장바구니'),
+                        label: Text('담아놓기'),
                         icon: Icon(Icons.shopping_cart),
                       ),
                       ButtonSegment(
@@ -791,7 +791,7 @@ class RecipeScreenState extends State<RecipeScreen> {
                       ],
                     ),
                   ),
-                // 칩 리스트 (냉장고/장바구니 모드만)
+                // 칩 리스트 (냉장고/담아놓기 모드만)
                 if (_showChipSection) ...[
                   Padding(
                     padding: const EdgeInsets.fromLTRB(24, 0, 16, 8),

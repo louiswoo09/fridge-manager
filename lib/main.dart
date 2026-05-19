@@ -79,8 +79,8 @@ class _MainScreenState extends State<MainScreen> {
             label: '레시피 추천',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.shopping_cart),
-            label: '장보기',
+            icon: Icon(Icons.bar_chart),
+            label: '가격 동향',
           ),
         ],
       ),

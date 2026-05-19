@@ -2,7 +2,7 @@ import 'dart:collection';
 
 /// Gemini 변형 결과를 메모리에 캐시 (LRU)
 /// 
-/// 같은 (레시피 + 보유재료 + 장바구니재료 + 모드) 조합으로 다시 변형 요청하면
+/// 같은 (레시피 + 보유재료 + 담아놓기재료 + 모드) 조합으로 다시 변형 요청하면
 /// 캐시된 결과 반환. 앱 재시작하면 사라짐 (세션 캐시).
 class GeminiCacheService {
   static final GeminiCacheService _instance = GeminiCacheService._();

@@ -23,8 +23,12 @@ class _CartScreenState extends State<CartScreen> {
   final KamisCacheService _kamisCache = KamisCacheService();
   bool _isLoading = true;
   Set<String> _cartKeys = {};
+  Map<String, int> _quantities = {};
+  bool _isMoveMode = false;
+  final Set<String> _selectedIds = {};
   List<Map<String, dynamic>> _allItems = [];
   StreamSubscription<List<String>>? _cartSubscription;
+  StreamSubscription<Map<String, int>>? _quantitySubscription;
 
   @override
   void initState() {
@@ -33,12 +37,17 @@ class _CartScreenState extends State<CartScreen> {
       if (!mounted) return;
       setState(() => _cartKeys = keys.toSet());
     });
+    _quantitySubscription = _cartService.watchQuantities().listen((map) {
+      if (!mounted) return;
+      setState(() => _quantities = map);
+    });
     _fetchData();
   }
 
   @override
   void dispose() {
     _cartSubscription?.cancel();
+    _quantitySubscription?.cancel();
     super.dispose();
   }
 
@@ -67,39 +76,92 @@ class _CartScreenState extends State<CartScreen> {
     }
   }
 
+  int _quantityOf(Map<String, dynamic> item) {
+    final productNo = item['productno']?.toString() ?? '';
+    final productName = item['productName']?.toString() ?? '';
+    final key = _cartService.keyFor(productNo, productName);
+    return _quantities[key] ?? 1;
+  }
+
+  String _formatNumber(int value) {
+    return value.toString().replaceAllMapped(
+      RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+      (m) => '${m[1]},',
+    );
+  }
+
+  Future<void> _incrementItem(Map<String, dynamic> item) async {
+    final productNo = item['productno']?.toString() ?? '';
+    final productName = item['productName']?.toString() ?? '';
+    final displayName = ProductNameFormatter.format(item);
+    if (productNo.isEmpty) return;
+    await _cartService.add(
+      productNo: productNo,
+      productName: productName,
+      displayName: displayName,
+    );
+  }
+
+  Future<void> _decrementItem(Map<String, dynamic> item) async {
+    final productNo = item['productno']?.toString() ?? '';
+    final productName = item['productName']?.toString() ?? '';
+    if (productNo.isEmpty) return;
+    await _cartService.decrement(
+      productNo: productNo,
+      productName: productName,
+    );
+  }
+
   Future<void> _removeFromCart(Map<String, dynamic> item) async {
     final productNo = item['productno']?.toString() ?? '';
     final productName = item['productName']?.toString() ?? '';
     if (productNo.isEmpty) return;
     await _cartService.remove(productNo, productName);
-    _showSnack('${ProductNameFormatter.format(item)} 장바구니에서 제거됨');
+    _showSnack('${ProductNameFormatter.format(item)} 담아놓기에서 제거됨');
   }
 
-  Future<void> _purchaseItem(Map<String, dynamic> item) async {
-    final productNo = item['productno']?.toString() ?? '';
-    final productName = item['productName']?.toString() ?? '';
-    if (productNo.isEmpty) return;
+  Future<void> _moveSelectedToFridge() async {
+    if (_selectedIds.isEmpty) return;
 
-    final cleanName = ProductNameFormatter.toSearchKeyword(
-      ProductNameFormatter.format(item),
-    );
+    // 선택된 항목들 차례로 AddIngredientScreen 띄우기
+    final selectedItems = _cartItems.where((item) {
+      final productNo = item['productno']?.toString() ?? '';
+      final productName = item['productName']?.toString() ?? '';
+      final key = _cartService.keyFor(productNo, productName);
+      return _selectedIds.contains(key);
+    }).toList();
 
-    final savedName = await Navigator.push<String>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => AddIngredientScreen(prefilledName: cleanName),
-      ),
-    );
+    for (final item in selectedItems) {
+      if (!mounted) return;
 
-    if (savedName != null && savedName.isNotEmpty && mounted) {
-      await _cartService.remove(productNo, productName);
-      _showSnack('$savedName 냉장고에 추가됨');
+      final productNo = item['productno']?.toString() ?? '';
+      final productName = item['productName']?.toString() ?? '';
+      final cleanName = ProductNameFormatter.toSearchKeyword(
+        ProductNameFormatter.format(item),
+      );
+
+      final savedName = await Navigator.push<String>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AddIngredientScreen(prefilledName: cleanName),
+        ),
+      );
+
+      if (savedName != null && savedName.isNotEmpty && mounted) {
+        await _cartService.remove(productNo, productName);
+      }
     }
+
+    if (!mounted) return;
+    setState(() {
+      _selectedIds.clear();
+      _isMoveMode = false;
+    });
   }
 
   void _goToRecipeRecommendation() {
     if (_cartItems.isEmpty) {
-      _showSnack('장바구니가 비어있어요');
+      _showSnack('담아놓기가 비어있어요');
       return;
     }
 
@@ -121,14 +183,45 @@ class _CartScreenState extends State<CartScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('장바구니 (${cartItems.length})'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.restaurant_menu),
-            tooltip: '이 장바구니로 레시피 추천',
-            onPressed: cartItems.isEmpty ? null : _goToRecipeRecommendation,
-          ),
-        ],
+        title: Text(
+          _isMoveMode
+              ? '${_selectedIds.length}개 선택됨'
+              : '담아놓기 (${cartItems.length})',
+        ),
+        actions: _isMoveMode
+            ? [
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _selectedIds.clear();
+                      _isMoveMode = false;
+                    });
+                  },
+                  child: const Text('취소', style: TextStyle(color: Colors.red)),
+                ),
+                TextButton(
+                  onPressed: _selectedIds.isEmpty
+                      ? null
+                      : _moveSelectedToFridge,
+                  child: const Text('이동'),
+                ),
+              ]
+            : [
+                IconButton(
+                  icon: const Icon(Icons.kitchen),
+                  tooltip: '냉장고로 이동',
+                  onPressed: cartItems.isEmpty
+                      ? null
+                      : () => setState(() => _isMoveMode = true),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.restaurant_menu),
+                  tooltip: '이 담아놓기로 레시피 추천',
+                  onPressed: cartItems.isEmpty
+                      ? null
+                      : _goToRecipeRecommendation,
+                ),
+              ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -137,7 +230,7 @@ class _CartScreenState extends State<CartScreen> {
               child: Padding(
                 padding: EdgeInsets.all(32),
                 child: Text(
-                  '장바구니가 비어있어요.\n\n장보기 화면에서 + 버튼으로 담아보세요.',
+                  '담아놓기 화면이 비어있어요.\n\n가격 동향에서 + 버튼으로 담아보세요.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.grey, height: 1.5),
                 ),
@@ -147,55 +240,175 @@ class _CartScreenState extends State<CartScreen> {
               itemCount: cartItems.length,
               itemBuilder: (context, index) {
                 final item = cartItems[index];
-                final displayName = ProductNameFormatter.format(item);
+                return _buildCartItem(item);
+              },
+            ),
+    );
+  }
 
-                return Card(
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
+  Widget _buildCartItem(Map<String, dynamic> item) {
+    final displayName = ProductNameFormatter.format(item);
+    final quantity = _quantityOf(item);
+    final productNo = item['productno']?.toString() ?? '';
+    final productName = item['productName']?.toString() ?? '';
+    final key = _cartService.keyFor(productNo, productName);
+
+    final unitPrice =
+        int.tryParse(item['dpr1']?.toString().replaceAll(',', '') ?? '') ?? 0;
+    final totalPrice = unitPrice * quantity;
+
+    final isSelected = _selectedIds.contains(key);
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      color: _isMoveMode && isSelected ? Colors.deepPurple.shade50 : null,
+      child: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 40, 16),
+            child: Row(
+              children: [
+                if (_isMoveMode) ...[
+                  Icon(
+                    isSelected
+                        ? Icons.check_circle
+                        : Icons.radio_button_unchecked,
+                    color: isSelected ? Colors.deepPurple : Colors.grey,
                   ),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
-                    title: Text(
-                      displayName,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    subtitle: Text('${item['dpr1']}원 / ${item['unit']}'),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
+                  const SizedBox(width: 12),
+                ],
+                Expanded(
+                  child: InkWell(
+                    onTap: () {
+                      if (_isMoveMode) {
+                        setState(() {
+                          if (isSelected) {
+                            _selectedIds.remove(key);
+                          } else {
+                            _selectedIds.add(key);
+                          }
+                        });
+                      } else {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ShoppingDetailScreen(
+                              item: item,
+                              displayName: displayName,
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                    borderRadius: BorderRadius.circular(4),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        IconButton(
-                          icon: const Icon(
-                            Icons.shopping_bag_outlined,
-                            color: Colors.deepPurple,
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                displayName,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 17,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${item['dpr1']}원 / ${item['unit']}',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ],
                           ),
-                          tooltip: '구매',
-                          onPressed: () => _purchaseItem(item),
                         ),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.remove_circle_outline,
-                            color: Colors.red,
-                          ),
-                          onPressed: () => _removeFromCart(item),
+                        const SizedBox(width: 8),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Text(
+                              '${_formatNumber(totalPrice)}원',
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.deepPurple,
+                              ),
+                            ),
+                            const SizedBox(width: 2),
+                            if (_isMoveMode) ...[
+                              const SizedBox(width: 12),
+                              SizedBox(
+                                width: 40,
+                                child: Text(
+                                  '$quantity개',
+                                  textAlign: TextAlign.right,
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ],
                     ),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ShoppingDetailScreen(
-                            item: item,
-                            displayName: displayName,
-                          ),
-                        ),
-                      );
-                    },
                   ),
-                );
-              },
+                ),
+                if (!_isMoveMode) ...[
+                  IconButton(
+                    icon: const Icon(Icons.remove_circle_outline),
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: quantity <= 1
+                        ? null
+                        : () => _decrementItem(item),
+                  ),
+                  SizedBox(
+                    width: 20,
+                    child: Text(
+                      '$quantity',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.add_circle_outline),
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () => _incrementItem(item),
+                  ),
+                ],
+              ],
             ),
+          ),
+          if (!_isMoveMode)
+            Positioned(
+              top: 0,
+              right: 0,
+              child: IconButton(
+                icon: const Icon(Icons.close, size: 16),
+                color: Colors.grey,
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                padding: EdgeInsets.zero,
+                tooltip: '제거',
+                onPressed: () => _removeFromCart(item),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

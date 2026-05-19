@@ -169,14 +169,14 @@ class _ShoppingScreenState extends State<ShoppingScreen>
 
     if (_cartService.contains(_cartKeys, productNo, productName)) {
       await _cartService.remove(productNo, productName);
-      _showSnack('$displayName 장바구니에서 제거됨');
+      _showSnack('$displayName 담아놓기에서 제거됨');
     } else {
       await _cartService.add(
         productNo: productNo,
         productName: productName,
         displayName: displayName,
       );
-      _showSnack('$displayName 장바구니에 담김');
+      _showSnack('$displayName 담아놓기에 담김');
     }
   }
 
@@ -302,7 +302,7 @@ class _ShoppingScreenState extends State<ShoppingScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('장보기'),
+        title: const Text('가격 동향'),
         bottom: _isSearching
             ? PreferredSize(
                 preferredSize: const Size.fromHeight(110),
@@ -367,8 +367,8 @@ class _ShoppingScreenState extends State<ShoppingScreen>
             onPressed: _showFilterSheet,
           ),
           IconButton(
-            icon: const Icon(Icons.shopping_cart),
-            tooltip: '장바구니',
+            icon: const Icon(Icons.shopping_bag_outlined),
+            tooltip: '담아놓기',
             onPressed: () {
               Navigator.push(
                 context,

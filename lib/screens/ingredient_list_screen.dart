@@ -32,6 +32,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
   bool _notificationScheduled = false;
   final Set<String> _selectedIds = {};
   List<Ingredient> _items = [];
+  bool _isAnalysisExpanded = true;
 
   final FridgeAnalysisService _analysisService = FridgeAnalysisService();
   FridgeAnalysis? _analysis;
@@ -611,85 +612,146 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
 
     return Card(
       clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () {
-          // suggestion ("파스타, 찜, 볶음")을 콤마로 분리
-          final keywords = _analysis!.suggestion
-              .split(',')
-              .map((s) => s.trim())
-              .where((s) => s.isNotEmpty)
-              .toList();
-          if (keywords.isEmpty) return;
-          widget.onRequestRecipeKeywordSearch?.call(keywords);
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(
-                    Icons.auto_awesome,
-                    size: 18,
-                    color: Colors.indigo,
-                  ),
-                  const SizedBox(width: 6),
-                  const Text(
-                    '냉장고 분석',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(16, 8, 16, _isAnalysisExpanded ? 4 : 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 헤더 — 클릭하면 접기/펼치기
+            InkWell(
+              onTap: () =>
+                  setState(() => _isAnalysisExpanded = !_isAnalysisExpanded),
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  vertical: _isAnalysisExpanded ? 4 : 4,
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.auto_awesome,
+                      size: 18,
                       color: Colors.indigo,
                     ),
+                    const SizedBox(width: 6),
+                    const Text(
+                      '냉장고 분석',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.indigo,
+                      ),
+                    ),
+                    const Spacer(),
+                    Icon(
+                      _isAnalysisExpanded
+                          ? Icons.expand_less
+                          : Icons.expand_more,
+                      size: 20,
+                      color: Colors.indigo,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // 펼친 상태에서만 분석 내용 표시
+            if (_isAnalysisExpanded) ...[
+              const SizedBox(height: 8),
+              Stack(
+                children: [
+                  // 메인 내용
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildAnalysisRow('재료 균형', _analysis!.status),
+                      const SizedBox(height: 4),
+                      _buildAnalysisRow('추천 요리', _analysis!.suggestion),
+                      if (_analysis!.imminentNames.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        _buildAnalysisRow(
+                          '임박 재료',
+                          _analysis!.imminentNames.join(', '),
+                          highlight: true,
+                        ),
+                      ],
+                    ],
                   ),
-                  const Spacer(),
-                  IconButton(
-                    icon: _isAnalyzing
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.refresh, size: 18),
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    onPressed: _isAnalyzing
-                        ? null
-                        : () => _fetchAnalysis(forceRefresh: true),
+                  // 우측 상단 새로고침
+                  Positioned(
+                    top: 0,
+                    right: -3,
+                    child: InkWell(
+                      onTap: _isAnalyzing
+                          ? null
+                          : () => _fetchAnalysis(forceRefresh: true),
+                      borderRadius: BorderRadius.circular(4),
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: _isAnalyzing
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.refresh,
+                                size: 18,
+                                color: Colors.indigo,
+                              ),
+                      ),
+                    ),
                   ),
                 ],
               ),
               const SizedBox(height: 8),
-              _buildAnalysisRow('재료 균형', _analysis!.status),
-              const SizedBox(height: 4),
-              _buildAnalysisRow('추천 요리', _analysis!.suggestion),
-              if (_analysis!.imminentNames.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                _buildAnalysisRow(
-                  '임박 재료',
-                  _analysis!.imminentNames.join(', '),
-                  highlight: true,
+              // 클릭 가능한 "레시피 검색" 부분만 InkWell로 감쌈
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    InkWell(
+                      onTap: () {
+                        final keywords = _analysis!.suggestion
+                            .split(',')
+                            .map((s) => s.trim())
+                            .where((s) => s.isNotEmpty)
+                            .toList();
+                        if (keywords.isEmpty) return;
+                        widget.onRequestRecipeKeywordSearch?.call(keywords);
+                      },
+                      borderRadius: BorderRadius.circular(4),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 2,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '"${_analysis!.suggestion}" 레시피 검색',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.indigo,
+                              ),
+                            ),
+                            const Icon(
+                              Icons.chevron_right,
+                              size: 16,
+                              color: Colors.indigo,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Text(
-                    '"${_analysis!.suggestion}" 레시피 검색',
-                    style: const TextStyle(fontSize: 12, color: Colors.indigo),
-                  ),
-                  const Icon(
-                    Icons.chevron_right,
-                    size: 16,
-                    color: Colors.indigo,
-                  ),
-                ],
               ),
             ],
-          ),
+          ],
         ),
       ),
     );

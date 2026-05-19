@@ -4,9 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 class CartService {
   String get _uid {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      throw StateError('로그인이 필요해요');
-    }
+    if (user == null) throw StateError('로그인이 필요해요');
     return user.uid;
   }
 
@@ -25,20 +23,22 @@ class CartService {
     return '${productNo}_$cleanName';
   }
 
+  /// 외부에서 키 조회용
+  String keyFor(String productNo, String productName) {
+    return _makeKey(productNo, productName);
+  }
+
   Stream<List<String>> watchKeys() {
     return _cartRef.snapshots().map(
       (snap) => snap.docs.map((doc) => doc.id).toList(),
     );
   }
 
-  /// 장바구니에 담긴 표시용/검색용 정제된 이름 리스트
-  /// (담을 때 ProductNameFormatter.format 적용한 결과를 같이 저장)
   Stream<List<String>> watchDisplayNames() {
     return _cartRef.snapshots().map(
       (snap) => snap.docs
           .map((doc) {
             final data = doc.data();
-            // displayName 우선, 없으면 productName fallback (이전 데이터 호환)
             return data['displayName']?.toString() ??
                 data['productName']?.toString() ??
                 '';
@@ -48,18 +48,55 @@ class CartService {
     );
   }
 
+  /// 키별 수량 맵 (UI에서 +/- 버튼 표시용)
+  Stream<Map<String, int>> watchQuantities() {
+    return _cartRef.snapshots().map((snap) {
+      final result = <String, int>{};
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        result[doc.id] = (data['quantity'] as num?)?.toInt() ?? 1;
+      }
+      return result;
+    });
+  }
+
   Future<void> add({
     required String productNo,
     required String productName,
     required String displayName,
   }) async {
     final key = _makeKey(productNo, productName);
-    await _cartRef.doc(key).set({
-      'productno': productNo,
-      'productName': productName,
-      'displayName': displayName,
-      'addedAt': Timestamp.now(),
-    });
+    final ref = _cartRef.doc(key);
+
+    final doc = await ref.get();
+    if (doc.exists) {
+      final current = (doc.data()?['quantity'] as num?)?.toInt() ?? 1;
+      await ref.update({'quantity': current + 1});
+    } else {
+      await ref.set({
+        'productno': productNo,
+        'productName': productName,
+        'displayName': displayName,
+        'quantity': 1,
+        'addedAt': Timestamp.now(),
+      });
+    }
+  }
+
+  /// 수량 감소 — 1이 최소, 더 줄이지 않음
+  Future<void> decrement({
+    required String productNo,
+    required String productName,
+  }) async {
+    final key = _makeKey(productNo, productName);
+    final ref = _cartRef.doc(key);
+    final doc = await ref.get();
+    if (!doc.exists) return;
+
+    final current = (doc.data()?['quantity'] as num?)?.toInt() ?? 1;
+    if (current <= 1) return;
+
+    await ref.update({'quantity': current - 1});
   }
 
   Future<void> remove(String productNo, String productName) async {
