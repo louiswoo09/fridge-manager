@@ -11,6 +11,7 @@ import '../services/recipe_list_cache_service.dart';
 import 'recipe_detail_screen.dart';
 import '../services/product_name_formatter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'favorite_list_screen.dart';
 
 const String kFoodApiKey = String.fromEnvironment('FOOD_API_KEY');
 
@@ -653,7 +654,7 @@ class RecipeScreenState extends State<RecipeScreen> {
       if (_resultFilterKeyword != null) {
         return '$_resultFilterKeyword 결과가 없습니다';
       }
-      return '추천할 레시피가 없습니다';
+      return '검색된 레시피가 없습니다';
     }
     // 빈 상태별 안내
     if (_currentMode == RecipeMode.shopping && _cartIngredientNames.isEmpty) {
@@ -724,6 +725,18 @@ class RecipeScreenState extends State<RecipeScreen> {
             _fridgeFilter == FridgeFilter.imminent ? '레시피 추천 (임박)' : '레시피 추천',
           _ => '레시피 추천',
         }),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.star),
+            tooltip: '즐겨찾기',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const FavoriteListScreen()),
+              );
+            },
+          ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())

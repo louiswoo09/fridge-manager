@@ -6,7 +6,7 @@ import '../models/ingredient.dart';
 import '../services/product_name_formatter.dart';
 
 const String _kGeminiApiKey = String.fromEnvironment('GEMINI_API_KEY');
-const String _kGeminiModel = 'gemini-3.1-flash-lite-preview';
+const String _kGeminiModel = 'gemini-3.1-flash-lite';
 
 class FridgeAnalysis {
   final String status; // "단백질 부족, 채소 풍부"

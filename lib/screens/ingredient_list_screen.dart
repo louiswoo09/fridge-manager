@@ -933,7 +933,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
                                   'deleted_at': Timestamp.now(),
                                 });
 
-                            if (mounted) {
+                            if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(content: Text('${item.name} 삭제됨')),
                               );

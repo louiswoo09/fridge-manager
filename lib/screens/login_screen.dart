@@ -42,7 +42,7 @@ class _LoginScreenState extends State<LoginScreen> {
         MaterialPageRoute(builder: (context) => const IngredientListScreen()),
       );
     } catch (e) {
-      print('로그인 오류: $e');
+      debugPrint('로그인 오류: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,

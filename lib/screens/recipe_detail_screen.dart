@@ -6,6 +6,7 @@ import '../models/recipe_mode.dart';
 import '../services/gemini_cache_service.dart';
 import '../services/product_name_formatter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../services/favorite_service.dart';
 
 const String kGeminiApiKey = String.fromEnvironment('GEMINI_API_KEY');
 
@@ -16,6 +17,8 @@ class RecipeDetailScreen extends StatefulWidget {
   final List<String> imminentIngredients;
   final RecipeMode mode;
   final FridgeFilter fridgeFilter;
+  final String? initialAiResult;
+  final bool fromFavorite;
 
   const RecipeDetailScreen({
     super.key,
@@ -25,6 +28,8 @@ class RecipeDetailScreen extends StatefulWidget {
     this.imminentIngredients = const [],
     this.mode = RecipeMode.fridge,
     this.fridgeFilter = FridgeFilter.all,
+    this.initialAiResult,
+    this.fromFavorite = false,
   });
 
   @override
@@ -38,10 +43,15 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
   final GeminiCacheService _geminiCache = GeminiCacheService();
   late RecipeMode _currentMode;
   late FridgeFilter _fridgeFilter;
+  final FavoriteService _favoriteService = FavoriteService();
+  Set<String> _favoriteKeys = {};
+  StreamSubscription<Set<String>>? _favoriteSubscription;
+  late final String _sessionId;
 
   @override
   void initState() {
     super.initState();
+    _sessionId = DateTime.now().microsecondsSinceEpoch.toString();
 
     final recipeId =
         widget.recipe['RCP_SEQ']?.toString() ??
@@ -57,7 +67,25 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
       _fridgeFilter = widget.fridgeFilter;
     }
 
-    _restoreCachedResult();
+    _favoriteSubscription = _favoriteService.watchFavoriteKeys().listen((keys) {
+      if (!mounted) return;
+      setState(() => _favoriteKeys = keys);
+    });
+
+    if (widget.initialAiResult != null) {
+      // 변형 즐겨찾기 진입 — 저장된 결과 표시
+      _geminiResult = widget.initialAiResult;
+      _geminiCache.put(_buildCacheKey(), widget.initialAiResult!);
+    } else {
+      // 일반 진입 — 캐시 복원
+      _restoreCachedResult();
+    }
+  }
+
+  @override
+  void dispose() {
+    _favoriteSubscription?.cancel();
+    super.dispose();
   }
 
   void _restoreCachedResult() {
@@ -124,14 +152,80 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
         widget.recipe['RCP_NM']?.toString() ??
         '';
 
-    // 필터가 임박이면 캐시 키 분리 (전체 변형이랑 다른 결과)
     final filterPart =
         (_currentMode == RecipeMode.fridge &&
             _fridgeFilter == FridgeFilter.imminent)
         ? '|imminent'
         : '';
 
-    return '${_currentMode.name}|$recipeId$filterPart';
+    // 즐겨찾기 진입은 세션별 격리
+    final favoritePart = widget.fromFavorite ? '|fav_$_sessionId' : '';
+
+    return '${_currentMode.name}|$recipeId$filterPart$favoritePart';
+  }
+
+  String get _recipeId =>
+      widget.recipe['RCP_SEQ']?.toString() ??
+      widget.recipe['RCP_NM']?.toString() ??
+      '';
+
+  bool get _isOriginalFavorited {
+    return _favoriteService.contains(_favoriteKeys, recipeId: _recipeId);
+  }
+
+  bool get _hasAnyVariantFavorited {
+    return _favoriteKeys.any((key) => key.startsWith('variant_${_recipeId}_'));
+  }
+
+  bool get _isVariantFavorited {
+    if (_geminiResult == null) return false;
+    return _favoriteService.contains(
+      _favoriteKeys,
+      recipeId: _recipeId,
+      aiResult: _geminiResult,
+    );
+  }
+
+  Future<void> _toggleOriginalFavorite() async {
+    final recipeName = widget.recipe['RCP_NM']?.toString() ?? '';
+    if (_recipeId.isEmpty) return;
+
+    if (_isOriginalFavorited) {
+      await _favoriteService.remove(recipeId: _recipeId);
+      _showSnack('$recipeName 즐겨찾기 해제');
+    } else {
+      await _favoriteService.add(
+        recipeId: _recipeId,
+        recipeName: recipeName,
+        recipeData: widget.recipe,
+      );
+      _showSnack('$recipeName 즐겨찾기 추가');
+    }
+  }
+
+  Future<void> _toggleVariantFavorite() async {
+    if (_geminiResult == null) return;
+    final recipeName = widget.recipe['RCP_NM']?.toString() ?? '';
+    if (_recipeId.isEmpty) return;
+
+    if (_isVariantFavorited) {
+      await _favoriteService.remove(
+        recipeId: _recipeId,
+        aiResult: _geminiResult,
+      );
+      _showSnack('즐겨찾기 해제');
+    } else {
+      // 원본 + 변형 한 번에 추가
+      await _favoriteService.addVariantWithOriginal(
+        recipeId: _recipeId,
+        recipeName: recipeName,
+        recipeData: widget.recipe,
+        aiResult: _geminiResult!,
+        mode: _currentMode,
+        fridgeFilter: _fridgeFilter,
+      );
+      _showSnack('즐겨찾기 추가');
+    }
   }
 
   String _buildPrompt() {
@@ -289,7 +383,7 @@ $ownedSection$cartSection$imminentSection
     });
 
     final url = Uri.parse(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=$kGeminiApiKey',
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=$kGeminiApiKey',
     );
 
     final prompt = _buildPrompt();
@@ -393,7 +487,20 @@ $ownedSection$cartSection$imminentSection
     final manuals = _getManuals();
 
     return Scaffold(
-      appBar: AppBar(title: Text(name)),
+      appBar: AppBar(
+        title: Text(name),
+        actions: [
+          if (!_hasAnyVariantFavorited)
+            IconButton(
+              icon: Icon(
+                _isOriginalFavorited ? Icons.star : Icons.star_border,
+                color: _isOriginalFavorited ? Colors.amber : null,
+              ),
+              tooltip: _isOriginalFavorited ? '즐겨찾기 해제' : '즐겨찾기 추가',
+              onPressed: _toggleOriginalFavorite,
+            ),
+        ],
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -541,9 +648,23 @@ $ownedSection$cartSection$imminentSection
             ),
             if (_geminiResult != null) ...[
               const SizedBox(height: 16),
-              const Text(
-                'AI 맞춤 레시피',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              Row(
+                children: [
+                  const Text(
+                    'AI 맞춤 레시피',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: Icon(
+                      _isVariantFavorited ? Icons.star : Icons.star_border,
+                      color: _isVariantFavorited ? Colors.amber : null,
+                    ),
+                    tooltip: _isVariantFavorited ? '즐겨찾기 해제' : '즐겨찾기 추가',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: _toggleVariantFavorite,
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
               Container(
