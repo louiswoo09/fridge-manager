@@ -6,6 +6,7 @@ import '../services/cart_service.dart';
 import '../models/ingredient.dart';
 import '../models/recipe_mode.dart';
 import 'recipe_detail_screen.dart';
+import 'dart:convert';
 
 class FavoriteListScreen extends StatefulWidget {
   const FavoriteListScreen({super.key});
@@ -117,16 +118,33 @@ class _FavoriteListScreenState extends State<FavoriteListScreen> {
     return map;
   }
 
-  /// AI 결과의 첫 줄을 제목으로 추출
   String _extractVariantTitle(String? aiResult) {
     if (aiResult == null) return '변형 레시피';
-    final lines = aiResult.split('\n');
-    for (final line in lines) {
-      final trimmed = line.trim();
-      if (trimmed.isNotEmpty) {
-        return trimmed;
+
+    final trimmed = aiResult.trim();
+
+    // JSON 형식인지 시도
+    if (trimmed.startsWith('{')) {
+      try {
+        final json = jsonDecode(trimmed);
+        final title = (json as Map<String, dynamic>)['title']?.toString();
+        if (title != null && title.isNotEmpty) {
+          return title;
+        }
+      } catch (_) {
+        // 파싱 실패 시 아래로
       }
     }
+
+    // 옛 형식 — 첫 줄
+    final lines = trimmed.split('\n');
+    for (final line in lines) {
+      final t = line.trim();
+      if (t.isNotEmpty) {
+        return t;
+      }
+    }
+
     return '변형 레시피';
   }
 
@@ -296,6 +314,8 @@ class _FavoriteListScreenState extends State<FavoriteListScreen> {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: ExpansionTile(
+        shape: const Border(),
+        collapsedShape: const Border(),
         leading: const Icon(Icons.restaurant_menu, color: Colors.deepPurple),
         title: InkWell(
           onTap: canOpenOriginal

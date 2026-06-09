@@ -25,6 +25,11 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: '냉장고 매니저',
       theme: ThemeData(
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.transparent,
+          scrolledUnderElevation: 0,
+          surfaceTintColor: Colors.transparent,
+        ),
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
       home: FirebaseAuth.instance.currentUser == null
@@ -78,10 +83,7 @@ class _MainScreenState extends State<MainScreen> {
             icon: Icon(Icons.restaurant_menu),
             label: '레시피 추천',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.bar_chart),
-            label: '가격 동향',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.bar_chart), label: '가격 동향'),
         ],
       ),
     );
