@@ -17,8 +17,7 @@ class FavoriteService {
       .doc(_uid)
       .collection('favorites');
 
-  /// 원본은 recipeId 기반, 변형은 AI 결과 해시 기반
-  /// 같은 모드로 변형해도 결과가 다르면 별개 즐겨찾기로 저장됨
+  
   String _makeKey({required String recipeId, String? aiResult}) {
     if (aiResult == null) {
       return 'original_$recipeId';

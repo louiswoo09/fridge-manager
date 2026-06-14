@@ -10,6 +10,7 @@ import 'profile_screen.dart';
 import '../services/notification_service.dart';
 import 'trash_screen.dart';
 import '../services/fridge_analysis_service.dart';
+import '../services/ingredient_icon_mapper.dart';
 
 import '../main.dart';
 
@@ -302,23 +303,6 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
     if (days <= 3) return Colors.red;
     if (days <= 7) return Colors.orange;
     return Colors.green;
-  }
-
-  IconData _getCategoryIcon(String category) {
-    switch (category) {
-      case '채소':
-        return Icons.eco;
-      case '육류':
-        return Icons.kebab_dining;
-      case '유제품':
-        return Icons.water_drop;
-      case '과일':
-        return Icons.apple;
-      case '해산물':
-        return Icons.set_meal;
-      default:
-        return Icons.kitchen;
-    }
   }
 
   Widget _detailRow(String label, String value) {
@@ -863,9 +847,10 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
                             secondary: CircleAvatar(
                               backgroundColor: Colors.grey[200],
                               radius: 24,
-                              child: Icon(
-                                _getCategoryIcon(item.category),
-                                color: Colors.grey[700],
+                              child: IngredientIconMapper.build(
+                                name: item.name,
+                                category: item.category,
+                                size: 24,
                               ),
                             ),
                             title: Text(
@@ -967,9 +952,10 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
                             leading: CircleAvatar(
                               backgroundColor: Colors.grey[200],
                               radius: 24,
-                              child: Icon(
-                                _getCategoryIcon(item.category),
-                                color: Colors.grey[700],
+                              child: IngredientIconMapper.build(
+                                name: item.name,
+                                category: item.category,
+                                size: 24,
                               ),
                             ),
                             title: Text(

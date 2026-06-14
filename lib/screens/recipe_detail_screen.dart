@@ -321,13 +321,16 @@ JSON 스키마:
   "title": "string",
   "servings": "integer",
   "ingredients": {
-    "fridge": [{"name": "string", "amount": "string", "unit": "string", "imminent": "boolean"}],
-    "cart": [{"name": "string", "amount": "string", "unit": "string", "imminent": "boolean"}],
+    "fridge": [{"name": "string", "amount": "string", "unit": 
+    "string", "imminent": "boolean"}],
+    "cart": [{"name": "string", "amount": "string", "unit": 
+    "string", "imminent": "boolean"}],
     "seasoning": [{"name": "string", "amount": "string", "unit": "string"}]
   },
   "tip": "string or null",
   "steps": [
-    {"order": "integer", "instruction": "string", "ingredients_used": ["string"], "time_seconds": "integer or null"}
+    {"order": "integer", "instruction": "string", "ingredients_used": 
+    ["string"], "time_seconds": "integer or null"}
   ],
   "insufficient": "boolean"
 }
