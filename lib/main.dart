@@ -8,6 +8,7 @@ import 'screens/login_screen.dart';
 import 'services/notification_service.dart';
 import 'screens/shopping_screen.dart';
 import 'models/recipe_mode.dart';
+import 'services/fridge_service.dart';
 
 typedef OnRequestRecipeKeywordSearch = void Function(List<String> keywords);
 void main() async {
@@ -34,8 +35,76 @@ class MyApp extends StatelessWidget {
       ),
       home: FirebaseAuth.instance.currentUser == null
           ? const LoginScreen()
-          : const MainScreen(),
+          : const FridgeInitGate(),
     );
+  }
+}
+
+class FridgeInitGate extends StatefulWidget {
+  const FridgeInitGate({super.key});
+
+  @override
+  State<FridgeInitGate> createState() => _FridgeInitGateState();
+}
+
+class _FridgeInitGateState extends State<FridgeInitGate> {
+  bool _ready = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    try {
+      await FridgeService().ensureDisplayName();
+      await FridgeService().ensureActiveFridge();
+      if (!mounted) return;
+      setState(() => _ready = true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_error != null) {
+      return Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                const SizedBox(height: 16),
+                Text('초기화 실패\n$_error', textAlign: TextAlign.center),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      _error = null;
+                      _ready = false;
+                    });
+                    _initialize();
+                  },
+                  child: const Text('다시 시도'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (!_ready) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    return const MainScreen();
   }
 }
 

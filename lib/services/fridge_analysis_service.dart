@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/ingredient.dart';
@@ -9,9 +11,9 @@ const String _kGeminiApiKey = String.fromEnvironment('GEMINI_API_KEY');
 const String _kGeminiModel = 'gemini-3.1-flash-lite';
 
 class FridgeAnalysis {
-  final String status; // "단백질 부족, 채소 풍부"
-  final String suggestion; // "볶음, 국물 요리"
-  final List<String> imminentNames; // ["두부", "양상추"]
+  final String status;
+  final String suggestion;
+  final List<String> imminentNames;
   final DateTime generatedAt;
 
   FridgeAnalysis({
@@ -24,6 +26,26 @@ class FridgeAnalysis {
   bool isExpired() {
     return DateTime.now().difference(generatedAt) > const Duration(hours: 24);
   }
+
+  Map<String, dynamic> toMap() => {
+        'status': status,
+        'suggestion': suggestion,
+        'imminentNames': imminentNames,
+        'generatedAt': Timestamp.fromDate(generatedAt),
+      };
+
+  factory FridgeAnalysis.fromMap(Map<String, dynamic> map) {
+    return FridgeAnalysis(
+      status: map['status']?.toString() ?? '',
+      suggestion: map['suggestion']?.toString() ?? '',
+      imminentNames: (map['imminentNames'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
+      generatedAt: (map['generatedAt'] as Timestamp?)?.toDate() ??
+          DateTime.now(),
+    );
+  }
 }
 
 class FridgeAnalysisService {
@@ -31,42 +53,127 @@ class FridgeAnalysisService {
   factory FridgeAnalysisService() => _instance;
   FridgeAnalysisService._();
 
-  FridgeAnalysis? _cached;
-  Future<FridgeAnalysis>? _inflight;
+  // 메모리 캐시 (in-session 빠른 조회용)
+  final Map<String, FridgeAnalysis> _memoryCache = {};
+  final Map<String, Future<FridgeAnalysis>> _inflight = {};
 
-  FridgeAnalysis? get cached =>
-      (_cached != null && !_cached!.isExpired()) ? _cached : null;
+  String? _cachedActiveFridgeId;
 
-  void clear() {
-    _cached = null;
+  Future<String> _getActiveFridgeId() async {
+    if (_cachedActiveFridgeId != null) return _cachedActiveFridgeId!;
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .get();
+    final id = doc.data()?['activeFridgeId']?.toString();
+    if (id == null || id.isEmpty) {
+      throw StateError('활성 냉장고가 없습니다');
+    }
+    _cachedActiveFridgeId = id;
+    return id;
   }
 
-  /// 분석 요청 (캐시 우선, 만료/forceRefresh 시 새로 호출)
+  void invalidateCache() {
+    _cachedActiveFridgeId = null;
+  }
+
+  /// 현재 활성 냉장고의 캐시 (메모리만, 즉시 동기 반환)
+  FridgeAnalysis? get cached {
+    final id = _cachedActiveFridgeId;
+    if (id == null) return null;
+    final entry = _memoryCache[id];
+    if (entry == null) return null;
+    if (entry.isExpired()) {
+      _memoryCache.remove(id);
+      return null;
+    }
+    return entry;
+  }
+
+  void clear() {
+    _memoryCache.clear();
+  }
+
+  /// Firestore 캐시에서 로드 시도
+  Future<FridgeAnalysis?> _loadFirestoreCache(String fridgeId) async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('fridges')
+          .doc(fridgeId)
+          .get();
+      final cache = doc.data()?['analysisCache'] as Map<String, dynamic>?;
+      if (cache == null) return null;
+      
+      final analysis = FridgeAnalysis.fromMap(cache);
+      if (analysis.isExpired()) return null;
+      return analysis;
+    } catch (e) {
+      debugPrint('Firestore 캐시 로드 실패: $e');
+      return null;
+    }
+  }
+
+  /// Firestore 캐시에 저장
+  Future<void> _saveFirestoreCache(
+    String fridgeId,
+    FridgeAnalysis analysis,
+  ) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('fridges')
+          .doc(fridgeId)
+          .update({'analysisCache': analysis.toMap()});
+    } catch (e) {
+      debugPrint('Firestore 캐시 저장 실패: $e');
+    }
+  }
+
+  /// 분석 요청 (메모리 → Firestore → 새 호출 순)
   Future<FridgeAnalysis> analyze({
     required List<Ingredient> ingredients,
     required List<Ingredient> imminentIngredients,
     bool forceRefresh = false,
-  }) {
-    if (!forceRefresh && cached != null) {
-      return Future.value(cached);
-    }
-    if (_inflight != null) return _inflight!;
+  }) async {
+    final fridgeId = await _getActiveFridgeId();
 
-    _inflight = _callGemini(ingredients, imminentIngredients)
-        .then((result) {
-          _cached = result;
-          return result;
-        })
-        .whenComplete(() {
-          _inflight = null;
-        });
-    return _inflight!;
+    // 1. 메모리 캐시 확인
+    if (!forceRefresh) {
+      final mem = _memoryCache[fridgeId];
+      if (mem != null && !mem.isExpired()) {
+        return mem;
+      }
+
+      // 2. Firestore 캐시 확인
+      final fs = await _loadFirestoreCache(fridgeId);
+      if (fs != null) {
+        _memoryCache[fridgeId] = fs; // 메모리에 캐시
+        return fs;
+      }
+    }
+
+    // 3. in-flight 요청 공유
+    final existing = _inflight[fridgeId];
+    if (existing != null) return existing;
+
+    // 4. 새 호출
+    final future = _callGemini(ingredients, imminentIngredients).then((result) async {
+      _memoryCache[fridgeId] = result;
+      await _saveFirestoreCache(fridgeId, result);
+      return result;
+    }).whenComplete(() {
+      _inflight.remove(fridgeId);
+    });
+
+    _inflight[fridgeId] = future;
+    return future;
   }
 
   Future<FridgeAnalysis> _callGemini(
     List<Ingredient> all,
     List<Ingredient> imminent,
   ) async {
+    // 기존 _callGemini 본문 그대로
     if (_kGeminiApiKey.isEmpty) {
       throw Exception('Gemini API 키가 설정되지 않았습니다');
     }
@@ -99,7 +206,6 @@ class FridgeAnalysisService {
       ],
     });
 
-    // 재시도 로직
     const maxAttempts = 3;
     const delays = [Duration(seconds: 1), Duration(seconds: 3)];
     int? errorCode;

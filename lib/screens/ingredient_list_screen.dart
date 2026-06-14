@@ -1,7 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../models/ingredient.dart';
 import '../services/ingredient_service.dart';
 import 'add_ingredient_screen.dart';
@@ -11,8 +9,10 @@ import '../services/notification_service.dart';
 import 'trash_screen.dart';
 import '../services/fridge_analysis_service.dart';
 import '../services/ingredient_icon_mapper.dart';
-
 import '../main.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/fridge_service.dart';
+import '../services/cart_service.dart';
 
 class IngredientListScreen extends StatefulWidget {
   final OnRequestRecipeKeywordSearch? onRequestRecipeKeywordSearch;
@@ -25,7 +25,10 @@ class IngredientListScreen extends StatefulWidget {
 
 class _IngredientListScreenState extends State<IngredientListScreen> {
   final IngredientService _service = IngredientService();
-  late StreamSubscription<List<Ingredient>> _subscription;
+  final FridgeService _fridgeService = FridgeService();
+  StreamSubscription<List<Ingredient>>? _subscription;
+  StreamSubscription<String?>? _activeFridgeIdSub;
+  String _activeFridgeName = '냉장고 매니저';
   bool _isDeleteMode = false;
   bool _isMenuOpen = false;
   bool _isLoading = true;
@@ -46,8 +49,6 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
   String _searchQuery = '';
 
   final TextEditingController _searchController = TextEditingController();
-
-  String get _uid => FirebaseAuth.instance.currentUser!.uid;
 
   List<Ingredient> get _filteredItems {
     return _items.where((item) {
@@ -112,6 +113,42 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
   void initState() {
     super.initState();
     _service.cleanOldDeletedItems();
+
+    // 활성 냉장고 변경 감지 → 화면 갱신
+    _activeFridgeIdSub = _fridgeService.watchActiveFridgeId().listen((id) {
+      if (id == null || !mounted) return;
+      _onActiveFridgeChanged(id);
+    });
+  }
+
+  Future<void> _onActiveFridgeChanged(String fridgeId) async {
+    // Service 캐시 무효화
+    _service.invalidateCache();
+    CartService().invalidateCache();
+    _analysisService.invalidateCache();
+    FridgeAnalysisService().invalidateCache();
+
+    // 활성 냉장고 이름 가져오기
+    final fridgeDoc = await FirebaseFirestore.instance
+        .collection('fridges')
+        .doc(fridgeId)
+        .get();
+    if (!mounted) return;
+
+    final name = fridgeDoc.data()?['name']?.toString() ?? '냉장고';
+
+    // 기존 구독 해제
+    await _subscription?.cancel();
+
+    // 상태 초기화
+    setState(() {
+      _activeFridgeName = name;
+      _items = [];
+      _isLoading = true;
+      _notificationScheduled = false;
+    });
+
+    // 새 식재료 구독 시작
     _subscription = _service.getIngredients().listen(
       (items) {
         if (!mounted) return;
@@ -125,7 +162,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
           _notificationScheduled = true;
           NotificationService.scheduleAllNotifications(_items);
         }
-        _fetchAnalysis();
+        _fetchAnalysis(); 
       },
       onError: (error) {
         if (!mounted) return;
@@ -142,7 +179,8 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
 
   @override
   void dispose() {
-    _subscription.cancel();
+    _subscription?.cancel();
+    _activeFridgeIdSub?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -390,16 +428,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
     final deletedIds = Set<String>.from(_selectedIds);
 
     try {
-      final batch = FirebaseFirestore.instance.batch();
-      for (final id in deletedIds) {
-        final ref = FirebaseFirestore.instance
-            .collection('users')
-            .doc(_uid)
-            .collection('ingredients')
-            .doc(id);
-        batch.update(ref, {'is_deleted': true, 'deleted_at': Timestamp.now()});
-      }
-      await batch.commit();
+      await _service.softDeleteMany(deletedIds);
 
       if (!mounted) return;
 
@@ -415,7 +444,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('삭제 중 오류가 발생했습니다.')));
+      ).showSnackBar(SnackBar(content: Text('삭제 중 오류: $e')));
     }
   }
 
@@ -423,7 +452,9 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isDeleteMode ? '${_selectedIds.length}개 선택됨' : '냉장고 매니저'),
+        title: Text(
+          _isDeleteMode ? '${_selectedIds.length}개 선택됨' : _activeFridgeName,
+        ),
         bottom: _isSearching
             ? PreferredSize(
                 preferredSize: const Size.fromHeight(56),
@@ -908,15 +939,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
                           if (confirm != true) return false;
 
                           try {
-                            await FirebaseFirestore.instance
-                                .collection('users')
-                                .doc(_uid)
-                                .collection('ingredients')
-                                .doc(item.id)
-                                .update({
-                                  'is_deleted': true,
-                                  'deleted_at': Timestamp.now(),
-                                });
+                            await _service.softDeleteIngredient(item.id);
 
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(

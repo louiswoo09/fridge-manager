@@ -29,12 +29,12 @@ class _ShoppingScreenState extends State<ShoppingScreen>
   List<Map<String, dynamic>> _allItems = [];
 
   final KamisCacheService _kamisCache = KamisCacheService();
-
   final TextEditingController _searchController = TextEditingController();
 
   final CartService _cartService = CartService();
-  Set<String> _cartKeys = {};
-  StreamSubscription<List<String>>? _cartSubscription;
+  Map<String, int> _cartQuantities = {};
+  StreamSubscription<Map<String, int>>? _cartQuantitySub;
+  final Map<String, int> _pendingQuantities = {};
 
   final List<Map<String, String>> _categories = [
     {'code': 'all', 'name': '전체'},
@@ -63,9 +63,9 @@ class _ShoppingScreenState extends State<ShoppingScreen>
     super.initState();
     _tabController = TabController(length: _categories.length, vsync: this);
     _fetchData();
-    _cartSubscription = _cartService.watchKeys().listen((keys) {
+    _cartQuantitySub = _cartService.watchQuantities().listen((quantities) {
       if (!mounted) return;
-      setState(() => _cartKeys = keys.toSet());
+      setState(() => _cartQuantities = quantities);
     });
   }
 
@@ -73,7 +73,7 @@ class _ShoppingScreenState extends State<ShoppingScreen>
   void dispose() {
     _tabController.dispose();
     _searchController.dispose();
-    _cartSubscription?.cancel();
+    _cartQuantitySub?.cancel();
     super.dispose();
   }
 
@@ -103,6 +103,41 @@ class _ShoppingScreenState extends State<ShoppingScreen>
       debugPrint('KAMIS API 오류: $e');
       _showSnack('가격 정보를 불러오지 못했어요');
     }
+  }
+
+  String _scaledUnit(String unit, int multiplier) {
+    if (unit.isEmpty) return '';
+
+    // 정규식: 시작의 숫자(정수/소수) 추출
+    final match = RegExp(r'^(\d+\.?\d*)(.*)$').firstMatch(unit);
+    if (match == null) {
+      // 숫자 없으면 "N개" 형태로 그냥 곱한 수량 표시
+      return '$multiplier$unit';
+    }
+
+    final number = double.tryParse(match.group(1)!) ?? 1.0;
+    final suffix = match.group(2)!.trim();
+    final scaled = number * multiplier;
+
+    // 정수면 정수로, 소수면 소수로
+    final scaledText = scaled == scaled.truncate()
+        ? scaled.toInt().toString()
+        : scaled.toString();
+
+    return '$scaledText$suffix';
+  }
+
+  String _formatScaledPrice(String priceStr, int multiplier) {
+    final cleaned = priceStr.replaceAll(',', '');
+    final price = double.tryParse(cleaned);
+    if (price == null) return priceStr;
+
+    final scaled = (price * multiplier).round();
+    // 천 단위 콤마
+    return scaled.toString().replaceAllMapped(
+      RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+      (m) => '${m[1]},',
+    );
   }
 
   double _calcDiscount(Map<String, dynamic> item) {
@@ -160,24 +195,31 @@ class _ShoppingScreenState extends State<ShoppingScreen>
     return items;
   }
 
-  Future<void> _toggleCart(Map<String, dynamic> item) async {
+  void _adjustPending(String key, int delta) {
+    setState(() {
+      final current = _pendingQuantities[key] ?? 1;
+      final next = (current + delta).clamp(1, 99);
+      _pendingQuantities[key] = next;
+    });
+  }
+
+  Future<void> _addToCart(Map<String, dynamic> item) async {
     final productNo = item['productno']?.toString() ?? '';
     final productName = item['productName']?.toString() ?? '';
     if (productNo.isEmpty) return;
 
+    final key = _cartService.keyFor(productNo, productName);
+    final quantity = _pendingQuantities[key] ?? 1;
     final displayName = ProductNameFormatter.format(item);
 
-    if (_cartService.contains(_cartKeys, productNo, productName)) {
-      await _cartService.remove(productNo, productName);
-      _showSnack('$displayName 담아놓기에서 제거됨');
-    } else {
-      await _cartService.add(
-        productNo: productNo,
-        productName: productName,
-        displayName: displayName,
-      );
-      _showSnack('$displayName 담아놓기에 담김');
-    }
+    await _cartService.addQuantity(
+      productNo: productNo,
+      productName: productName,
+      displayName: displayName,
+      quantity: quantity,
+    );
+
+    _showSnack('$displayName $quantity개 담김');
   }
 
   void _showFilterSheet() {
@@ -430,75 +472,19 @@ class _ShoppingScreenState extends State<ShoppingScreen>
                           final productNo = item['productno']?.toString() ?? '';
                           final productName =
                               item['productName']?.toString() ?? '';
-                          final inCart = _cartService.contains(
-                            _cartKeys,
+                          final key = _cartService.keyFor(
                             productNo,
                             productName,
                           );
+                          final pendingQty = _pendingQuantities[key] ?? 1;
+                          final cartQty = _cartQuantities[key] ?? 0;
 
                           return Card(
                             margin: const EdgeInsets.symmetric(
                               horizontal: 12,
                               vertical: 6,
                             ),
-                            child: ListTile(
-                              contentPadding: const EdgeInsets.fromLTRB(
-                                16,
-                                6,
-                                8,
-                                6,
-                              ),
-                              title: Text(
-                                displayName,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '현재: ${item['dpr1']}원 / ${item['unit']}',
-                                  ),
-                                  Text(
-                                    '${_comparisonOptions[_comparisonBase]}: $basePrice원',
-                                    style: const TextStyle(
-                                      color: Colors.grey,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    discount > 0
-                                        ? '-${discount.toStringAsFixed(1)}%'
-                                        : '+${discount.abs().toStringAsFixed(1)}%',
-                                    style: TextStyle(
-                                      color: discountColor,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  IconButton(
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                    icon: Icon(
-                                      inCart
-                                          ? Icons.check_circle
-                                          : Icons.add_circle_outline,
-                                      color: inCart
-                                          ? Colors.deepPurple
-                                          : Colors.grey,
-                                    ),
-                                    onPressed: () => _toggleCart(item),
-                                  ),
-                                ],
-                              ),
+                            child: InkWell(
                               onTap: () {
                                 Navigator.push(
                                   context,
@@ -510,6 +496,196 @@ class _ShoppingScreenState extends State<ShoppingScreen>
                                   ),
                                 );
                               },
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  12,
+                                  12,
+                                  12,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // 1줄: 이름 + 할인율 + 담김 수량
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Row(
+                                            children: [
+                                              Flexible(
+                                                child: Text(
+                                                  displayName,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 16,
+                                                  ),
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                            ],
+                                          ),
+                                        ),
+                                        if (cartQty > 0)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.deepPurple.shade50,
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                            ),
+                                            child: Text(
+                                              '$cartQty개 담김',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color:
+                                                    Colors.deepPurple.shade700,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+
+                                    // 가격 (2줄) + 수량 + 담기 (한 Row)
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.center,
+                                      children: [
+                                        // 왼쪽: 가격 두 줄
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                '현재: ${_formatScaledPrice(item['dpr1']?.toString() ?? '0', pendingQty)}원',
+                                                style: const TextStyle(
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                '${_comparisonOptions[_comparisonBase]}: ${_formatScaledPrice(basePrice?.toString() ?? '0', pendingQty)}원',
+                                                style: const TextStyle(
+                                                  color: Colors.grey,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        // 할인율
+                                        SizedBox(
+                                          width: 70,
+                                          child: Center(
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 2,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: discountColor.withValues(
+                                                  alpha: 0.15,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                              ),
+                                              child: Text(
+                                                discount > 0
+                                                    ? '-${discount.toStringAsFixed(1)}%'
+                                                    : '+${discount.abs().toStringAsFixed(1)}%',
+                                                style: TextStyle(
+                                                  color: discountColor,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 14),
+                                        // 수량 조절
+                                        SizedBox(
+                                          width: 95,
+                                          child: Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              InkWell(
+                                                onTap: () =>
+                                                    _adjustPending(key, -1),
+                                                borderRadius:
+                                                    BorderRadius.circular(20),
+                                                child: const Padding(
+                                                  padding: EdgeInsets.all(2),
+                                                  child: Icon(
+                                                    Icons.remove_circle_outline,
+                                                    size: 22,
+                                                    color: Colors.deepPurple,
+                                                  ),
+                                                ),
+                                              ),
+                                              Expanded(
+                                                child: Text(
+                                                  _scaledUnit(
+                                                    item['unit']?.toString() ??
+                                                        '',
+                                                    pendingQty,
+                                                  ),
+                                                  textAlign: TextAlign.center,
+                                                  style: const TextStyle(
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ),
+                                              InkWell(
+                                                onTap: () =>
+                                                    _adjustPending(key, 1),
+                                                borderRadius:
+                                                    BorderRadius.circular(20),
+                                                child: const Padding(
+                                                  padding: EdgeInsets.all(2),
+                                                  child: Icon(
+                                                    Icons.add_circle_outline,
+                                                    size: 22,
+                                                    color: Colors.deepPurple,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        // 담기 버튼
+                                        ElevatedButton(
+                                          onPressed: () => _addToCart(item),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.deepPurple,
+                                            foregroundColor: Colors.white,
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 14,
+                                              vertical: 6,
+                                            ),
+                                            minimumSize: const Size(0, 32),
+                                            textStyle: const TextStyle(
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                          child: const Text('담기'),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
                           );
                         },

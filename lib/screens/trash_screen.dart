@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../models/ingredient.dart';
+import '../services/ingredient_service.dart';
 
 class TrashScreen extends StatefulWidget {
   const TrashScreen({super.key});
@@ -10,38 +9,14 @@ class TrashScreen extends StatefulWidget {
 }
 
 class _TrashScreenState extends State<TrashScreen> {
+  final IngredientService _service = IngredientService();
 
-  Stream<List<Ingredient>> getDeletedIngredients() {
-    final uid = FirebaseAuth.instance.currentUser!.uid;
-
-    return FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('ingredients')
-        .where('is_deleted', isEqualTo: true)
-        .snapshots()
-        .map(
-          (snapshot) => snapshot.docs
-              .map((doc) => Ingredient.fromMap(doc.data(), doc.id))
-              .toList(),
-        );
+  Future<void> _restoreItem(String id) async {
+    await _service.restoreIngredient(id);
   }
 
-  Future<void> restoreItem(String id) async {
-    final uid = FirebaseAuth.instance.currentUser!.uid;
-
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('ingredients')
-        .doc(id)
-        .update({'is_deleted': false, 'deleted_at': null});
-  }
-
-  Future<void> deleteForever(BuildContext context, String id) async {
-    final uid = FirebaseAuth.instance.currentUser!.uid;
-
-    final confirm = await showDialog(
+  Future<void> _deleteForever(BuildContext context, String id) async {
+    final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('삭제'),
@@ -60,19 +35,11 @@ class _TrashScreenState extends State<TrashScreen> {
     );
 
     if (confirm != true) return;
-
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('ingredients')
-        .doc(id)
-        .delete();
+    await _service.permanentlyDeleteIngredient(id);
   }
 
-  Future<void> deleteAll() async {
-    final uid = FirebaseAuth.instance.currentUser!.uid;
-
-    final confirm = await showDialog(
+  Future<void> _deleteAll() async {
+    final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('전체 삭제'),
@@ -91,21 +58,7 @@ class _TrashScreenState extends State<TrashScreen> {
     );
 
     if (confirm != true) return;
-
-    final snapshot = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('ingredients')
-        .where('is_deleted', isEqualTo: true)
-        .get();
-
-    final batch = FirebaseFirestore.instance.batch();
-
-    for (var doc in snapshot.docs) {
-      batch.delete(doc.reference);
-    }
-
-    await batch.commit();
+    await _service.emptyTrash();
   }
 
   @override
@@ -115,7 +68,7 @@ class _TrashScreenState extends State<TrashScreen> {
         title: const Text('휴지통'),
         actions: [
           TextButton(
-            onPressed: deleteAll,
+            onPressed: _deleteAll,
             child: const Text(
               '전체 삭제',
               style: TextStyle(color: Colors.red),
@@ -124,7 +77,7 @@ class _TrashScreenState extends State<TrashScreen> {
         ],
       ),
       body: StreamBuilder<List<Ingredient>>(
-        stream: getDeletedIngredients(),
+        stream: _service.getDeletedIngredients(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -143,16 +96,15 @@ class _TrashScreenState extends State<TrashScreen> {
 
               return ListTile(
                 title: Text(item.name),
-
                 trailing: Wrap(
                   children: [
                     IconButton(
                       icon: const Icon(Icons.restore),
-                      onPressed: () => restoreItem(item.id),
+                      onPressed: () => _restoreItem(item.id),
                     ),
                     IconButton(
                       icon: const Icon(Icons.delete_forever, color: Colors.red),
-                      onPressed: () => deleteForever(context, item.id),
+                      onPressed: () => _deleteForever(context, item.id),
                     ),
                   ],
                 ),

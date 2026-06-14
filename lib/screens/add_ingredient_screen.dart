@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../models/ingredient.dart';
+import '../services/ingredient_service.dart';
 
 class AddIngredientScreen extends StatefulWidget {
   final String? prefilledName;
-  
+
   const AddIngredientScreen({super.key, this.prefilledName});
 
   @override
@@ -67,8 +66,6 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
       return;
     }
 
-    final uid = FirebaseAuth.instance.currentUser!.uid;
-
     final ingredient = Ingredient(
       id: '',
       name: _nameController.text.trim(),
@@ -82,18 +79,13 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
     );
 
     try {
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('ingredients')
-          .add(ingredient.toMap());
-
+      await IngredientService().addIngredient(ingredient);
       if (mounted) Navigator.pop(context, _nameController.text.trim());
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('저장 중 오류가 발생했습니다.')));
+        ).showSnackBar(SnackBar(content: Text('저장 중 오류: $e')));
       }
     }
   }

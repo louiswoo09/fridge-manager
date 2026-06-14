@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/ingredient.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../services/ingredient_service.dart';
 
 class EditIngredientScreen extends StatefulWidget {
   final Ingredient ingredient;
@@ -84,20 +83,13 @@ class _EditIngredientScreenState extends State<EditIngredientScreen> {
     );
 
     try {
-      final uid = FirebaseAuth.instance.currentUser!.uid;
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('ingredients')
-          .doc(widget.ingredient.id)
-          .update(updated.toMap(isCreate: false));
-
+      await IngredientService().updateIngredient(widget.ingredient.id, updated);
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('수정 중 오류가 발생했습니다.')));
+        ).showSnackBar(SnackBar(content: Text('수정 중 오류: $e')));
       }
     }
   }
