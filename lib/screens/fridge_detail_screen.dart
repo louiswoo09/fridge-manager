@@ -65,10 +65,6 @@ class _FridgeDetailScreenState extends State<FridgeDetailScreen> {
 
     try {
       await _fridgeService.renameFridge(widget.fridgeId, newName);
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('이름이 "$newName"으로 변경됨')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -76,6 +72,17 @@ class _FridgeDetailScreenState extends State<FridgeDetailScreen> {
       ).showSnackBar(SnackBar(content: Text('변경 실패: $e')));
     }
   }
+
+  Future<void> _regenerateInviteCode() async {
+  try {
+    await _fridgeService.regenerateInviteCode(widget.fridgeId);
+  } catch (e) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('실패: $e')),
+    );
+  }
+}
 
   Future<void> _leaveFridge(String name, int memberCount) async {
     final isLast = memberCount <= 1;
@@ -85,8 +92,8 @@ class _FridgeDetailScreenState extends State<FridgeDetailScreen> {
         title: const Text('냉장고 떠나기'),
         content: Text(
           isLast
-              ? '"$name"의 마지막 멤버입니다.\n떠나면 냉장고와 모든 데이터가 삭제됩니다.\n계속할까요?'
-              : '"$name"에서 떠날까요?',
+              ? '$name의 마지막 멤버입니다.\n떠나면 냉장고와 모든 데이터가 삭제됩니다.\n계속할까요?'
+              : '$name에서 떠날까요?',
         ),
         actions: [
           TextButton(
@@ -96,7 +103,7 @@ class _FridgeDetailScreenState extends State<FridgeDetailScreen> {
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: Text(
-              isLast ? '떠나기 (삭제됨)' : '떠나기',
+              isLast ? '떠나기 (삭제)' : '떠나기',
               style: const TextStyle(color: Colors.red),
             ),
           ),
@@ -112,7 +119,7 @@ class _FridgeDetailScreenState extends State<FridgeDetailScreen> {
       Navigator.pop(context);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(isLast ? '냉장고가 삭제됨' : '냉장고에서 떠남')));
+      ).showSnackBar(SnackBar(content: Text(isLast ? '$name 삭제됨' : '$name 떠남')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -213,289 +220,290 @@ class _FridgeDetailScreenState extends State<FridgeDetailScreen> {
     ).showSnackBar(const SnackBar(content: Text('초대 코드 복사됨')));
   }
 
-@override
-Widget build(BuildContext context) {
-  return Scaffold(
-    appBar: AppBar(title: const Text('냉장고 관리')),
-    body: StreamBuilder<Map<String, dynamic>?>(
-      stream: _fridgeService.watchFridge(widget.fridgeId),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final fridge = snapshot.data;
-        if (fridge == null) {
-          return const Center(child: Text('냉장고를 찾을 수 없습니다'));
-        }
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('냉장고 관리')),
+      body: StreamBuilder<Map<String, dynamic>?>(
+        stream: _fridgeService.watchFridge(widget.fridgeId),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final fridge = snapshot.data;
+          if (fridge == null) {
+            return const Center(child: Text('냉장고를 찾을 수 없습니다'));
+          }
 
-        return StreamBuilder<Set<String>>(
-          stream: _fridgeService.watchPinnedFridges(),
-          builder: (context, pinSnap) {
-            final isPinned = (pinSnap.data ?? {}).contains(widget.fridgeId);
-            return _buildContent(fridge, isPinned);
-          },
-        );
-      },
-    ),
-  );
-}
+          return StreamBuilder<Set<String>>(
+            stream: _fridgeService.watchPinnedFridges(),
+            builder: (context, pinSnap) {
+              final isPinned = (pinSnap.data ?? {}).contains(widget.fridgeId);
+              return _buildContent(fridge, isPinned);
+            },
+          );
+        },
+      ),
+    );
+  }
 
-Widget _buildContent(Map<String, dynamic> fridge, bool isPinned) {
-  final name = fridge['name']?.toString() ?? '이름 없음';
-  final ownerUid = fridge['ownerUid']?.toString() ?? '';
-  final memberUids = List<String>.from(fridge['memberUids'] ?? []);
-  final inviteCode = fridge['inviteCode']?.toString() ?? '';
-  final isOwner = ownerUid == _myUid;
+  Widget _buildContent(Map<String, dynamic> fridge, bool isPinned) {
+    final name = fridge['name']?.toString() ?? '이름 없음';
+    final ownerUid = fridge['ownerUid']?.toString() ?? '';
+    final memberUids = List<String>.from(fridge['memberUids'] ?? []);
+    final inviteCode = fridge['inviteCode']?.toString() ?? '';
+    final isOwner = ownerUid == _myUid;
 
-  return ListView(
-    padding: const EdgeInsets.all(16),
-    children: [
-      // 냉장고 이름
-      Card(
-        child: ListTile(
-          leading: const Icon(Icons.kitchen, color: Colors.deepPurple),
-          title: Text(
-            name,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // 냉장고 이름
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.kitchen, color: Colors.deepPurple),
+            title: Text(
+              name,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            subtitle: Text('멤버 ${memberUids.length}명'),
+            trailing: IconButton(
+              icon: const Icon(Icons.edit, size: 18),
+              onPressed: () => _renameFridge(name),
             ),
           ),
-          subtitle: Text('멤버 ${memberUids.length}명'),
-          trailing: IconButton(
-            icon: const Icon(Icons.edit, size: 18),
-            onPressed: () => _renameFridge(name),
-          ),
         ),
-      ),
 
-      const SizedBox(height: 16),
+        const SizedBox(height: 16),
 
-      // 초대 코드
-      Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Row(
-                children: [
-                  Icon(Icons.key, size: 18, color: Colors.indigo),
-                  SizedBox(width: 6),
-                  Text(
-                    '초대 코드',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.indigo,
+        // 초대 코드
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.key, size: 18, color: Colors.indigo),
+                    SizedBox(width: 6),
+                    Text(
+                      '초대 코드',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.indigo,
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        inviteCode,
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 4,
-                          fontFamily: 'monospace',
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
                         ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    icon: const Icon(Icons.copy),
-                    onPressed: () => _copyInviteCode(inviteCode),
-                    tooltip: '복사',
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                '이 코드를 공유해 다른 사람을 초대할 수 있어요',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-            ],
-          ),
-        ),
-      ),
-
-      const SizedBox(height: 16),
-
-      // 멤버 목록
-      Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Row(
-                children: [
-                  Icon(Icons.people, size: 18, color: Colors.indigo),
-                  SizedBox(width: 6),
-                  Text(
-                    '멤버',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.indigo,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              ...memberUids.map((uid) {
-                final isMe = uid == _myUid;
-                final isOwnerMember = uid == ownerUid;
-                final aliases = Map<String, dynamic>.from(
-                  fridge['memberAliases'] ?? {},
-                );
-                final alias = aliases[uid]?.toString();
-
-                return StreamBuilder<String>(
-                  stream: _watchMemberName(uid),
-                  builder: (context, snap) {
-                    final name = snap.data ?? uid.substring(0, 8);
-
-                    return ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: CircleAvatar(
-                        backgroundColor: isOwnerMember
-                            ? Colors.amber.shade100
-                            : Colors.grey.shade200,
-                        child: Icon(
-                          isOwnerMember ? Icons.shield : Icons.person,
-                          size: 18,
-                          color: isOwnerMember
-                              ? Colors.amber.shade800
-                              : Colors.grey.shade700,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                      ),
-                      title: Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              name,
-                              style: const TextStyle(fontSize: 14),
-                            ),
+                        child: Text(
+                          inviteCode,
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 4,
+                            fontFamily: 'monospace',
                           ),
-                          if (alias != null && alias.isNotEmpty) ...[
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 1,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.green.shade50,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                alias,
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.green.shade700,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                          if (isOwnerMember) ...[
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 1,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.amber.shade100,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                '방장',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.amber.shade900,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
+                          textAlign: TextAlign.center,
+                        ),
                       ),
-                      trailing: Wrap(
-                        spacing: 0,
-                        children: [
-                          if (isOwner)
-                            IconButton(
-                              icon: const Icon(Icons.edit, size: 18),
-                              tooltip: '호칭 설정',
-                              onPressed: () => _editAlias(uid, alias),
-                            ),
-                          if (isOwner && !isMe)
-                            IconButton(
-                              icon: const Icon(
-                                Icons.remove_circle_outline,
-                                color: Colors.red,
-                                size: 20,
-                              ),
-                              tooltip: '강퇴',
-                              onPressed: () => _kickMember(uid, name),
-                            ),
-                        ],
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: const Icon(Icons.copy),
+                      onPressed: () => _copyInviteCode(inviteCode),
+                      tooltip: '복사',
+                    ),
+                    if (isOwner)
+                      IconButton(
+                        icon: const Icon(Icons.refresh),
+                        onPressed: _regenerateInviteCode,
+                        tooltip: '코드 재발급',
                       ),
-                    );
-                  },
-                );
-              }),
-            ],
+                  ],
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  '이 코드를 공유해 다른 사람을 초대할 수 있어요',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
           ),
         ),
-      ),
 
-      const SizedBox(height: 24),
+        const SizedBox(height: 16),
 
-      // 떠나기 (핀이면 비활성)
-      SizedBox(
-        width: double.infinity,
-        child: OutlinedButton.icon(
-          onPressed: isPinned
-              ? null
-              : () => _leaveFridge(name, memberUids.length),
-          icon: Icon(
-            Icons.exit_to_app,
-            color: isPinned ? Colors.grey : Colors.red,
+        // 멤버 목록
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.people, size: 18, color: Colors.indigo),
+                    SizedBox(width: 6),
+                    Text(
+                      '멤버',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.indigo,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ...memberUids.map((uid) {
+                  final isMe = uid == _myUid;
+                  final isOwnerMember = uid == ownerUid;
+                  final aliases = Map<String, dynamic>.from(
+                    fridge['memberAliases'] ?? {},
+                  );
+                  final alias = aliases[uid]?.toString();
+
+                  return StreamBuilder<String>(
+                    stream: _watchMemberName(uid),
+                    builder: (context, snap) {
+                      final name = snap.data ?? uid.substring(0, 8);
+
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: CircleAvatar(
+                          backgroundColor: isOwnerMember
+                              ? Colors.amber.shade100
+                              : Colors.grey.shade200,
+                          child: Icon(
+                            isOwnerMember ? Icons.shield : Icons.person,
+                            size: 18,
+                            color: isOwnerMember
+                                ? Colors.amber.shade800
+                                : Colors.grey.shade700,
+                          ),
+                        ),
+                        title: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                name,
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                            ),
+                            if (alias != null && alias.isNotEmpty) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 1,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.shade50,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  alias,
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.green.shade700,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            if (isOwnerMember) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 1,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.shade100,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  '방장',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.amber.shade900,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        trailing: Wrap(
+                          spacing: 0,
+                          children: [
+                            if (isOwner)
+                              IconButton(
+                                icon: const Icon(Icons.edit, size: 18),
+                                tooltip: '호칭 설정',
+                                onPressed: () => _editAlias(uid, alias),
+                              ),
+                            if (isOwner && !isMe)
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.remove_circle_outline,
+                                  color: Colors.red,
+                                  size: 20,
+                                ),
+                                tooltip: '강퇴',
+                                onPressed: () => _kickMember(uid, name),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                }),
+              ],
+            ),
           ),
-          label: Text(
-            isPinned ? '핀 해제 후 떠날 수 있어요' : '냉장고 떠나기',
-            style: TextStyle(
+        ),
+
+        const SizedBox(height: 24),
+
+        // 떠나기 (핀이면 비활성)
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: isPinned
+                ? null
+                : () => _leaveFridge(name, memberUids.length),
+            icon: Icon(
+              Icons.exit_to_app,
               color: isPinned ? Colors.grey : Colors.red,
             ),
-          ),
-          style: OutlinedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            side: BorderSide(
-              color: isPinned ? Colors.grey.shade300 : Colors.red,
+            label: Text(
+              isPinned ? '핀 해제 후 떠날 수 있어요' : '냉장고 떠나기',
+              style: TextStyle(color: isPinned ? Colors.grey : Colors.red),
+            ),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              side: BorderSide(
+                color: isPinned ? Colors.grey.shade300 : Colors.red,
+              ),
             ),
           ),
         ),
-      ),
-    ],
-  );
-}
+      ],
+    );
+  }
 }

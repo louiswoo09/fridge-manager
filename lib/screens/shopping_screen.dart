@@ -6,6 +6,7 @@ import 'cart_screen.dart';
 import '../services/product_name_formatter.dart';
 import '../services/kamis_cache_service.dart';
 import '../models/recipe_mode.dart';
+import '../services/fridge_service.dart';
 
 typedef OnRequestRecipe = void Function(RecipeMode mode);
 
@@ -32,8 +33,10 @@ class _ShoppingScreenState extends State<ShoppingScreen>
   final TextEditingController _searchController = TextEditingController();
 
   final CartService _cartService = CartService();
+  final FridgeService _fridgeService = FridgeService();
   Map<String, int> _cartQuantities = {};
   StreamSubscription<Map<String, int>>? _cartQuantitySub;
+  StreamSubscription<String?>? _activeFridgeIdSub;
   final Map<String, int> _pendingQuantities = {};
 
   final List<Map<String, String>> _categories = [
@@ -63,6 +66,28 @@ class _ShoppingScreenState extends State<ShoppingScreen>
     super.initState();
     _tabController = TabController(length: _categories.length, vsync: this);
     _fetchData();
+
+    // 활성 냉장고 변화 감지 → Stream 재구독
+    _activeFridgeIdSub = _fridgeService.watchActiveFridgeId().listen((id) {
+      if (id == null || !mounted) return;
+      _resubscribeCart();
+    });
+  }
+
+  void _resubscribeCart() async {
+    // 기존 구독 해제
+    await _cartQuantitySub?.cancel();
+
+    // 캐시 무효화 (이미 IngredientListScreen에서 했을 수 있지만 안전 차원)
+    _cartService.invalidateCache();
+
+    // 수량 리셋 + 새 구독
+    if (!mounted) return;
+    setState(() {
+      _cartQuantities = {};
+      _pendingQuantities.clear();
+    });
+
     _cartQuantitySub = _cartService.watchQuantities().listen((quantities) {
       if (!mounted) return;
       setState(() => _cartQuantities = quantities);
@@ -74,6 +99,7 @@ class _ShoppingScreenState extends State<ShoppingScreen>
     _tabController.dispose();
     _searchController.dispose();
     _cartQuantitySub?.cancel();
+    _activeFridgeIdSub?.cancel();
     super.dispose();
   }
 
@@ -218,8 +244,6 @@ class _ShoppingScreenState extends State<ShoppingScreen>
       displayName: displayName,
       quantity: quantity,
     );
-
-    _showSnack('$displayName $quantity개 담김');
   }
 
   void _showFilterSheet() {

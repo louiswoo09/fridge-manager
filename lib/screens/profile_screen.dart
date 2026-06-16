@@ -67,7 +67,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('"$name" 냉장고 생성됨')));
+      ).showSnackBar(SnackBar(content: Text('$name 생성됨')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -262,7 +262,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(currentPinned ? '"$name" 핀 해제' : '"$name" 핀 고정'),
+          content: Text(currentPinned ? '$name 핀 해제' : '$name 핀 고정'),
         ),
       );
     } catch (e) {

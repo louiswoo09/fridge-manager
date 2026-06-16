@@ -116,8 +116,31 @@ class _CartScreenState extends State<CartScreen> {
     final productNo = item['productno']?.toString() ?? '';
     final productName = item['productName']?.toString() ?? '';
     if (productNo.isEmpty) return;
+
+    final displayName = ProductNameFormatter.format(item);
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('제거 확인'),
+        content: Text('$displayName을(를) 담아놓기에서 제거할까요?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('제거', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
     await _cartService.remove(productNo, productName);
-    _showSnack('${ProductNameFormatter.format(item)} 담아놓기에서 제거됨');
+    _showSnack('$displayName 담아놓기에서 제거됨');
   }
 
   Future<void> _moveSelectedToFridge() async {
@@ -259,46 +282,101 @@ class _CartScreenState extends State<CartScreen> {
 
     final isSelected = _selectedIds.contains(key);
 
+    // 이동 모드: Card 전체 InkWell
+    if (_isMoveMode) {
+      return Card(
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        color: isSelected ? Colors.deepPurple.shade50 : null,
+        child: InkWell(
+          onTap: () {
+            setState(() {
+              if (isSelected) {
+                _selectedIds.remove(key);
+              } else {
+                _selectedIds.add(key);
+              }
+            });
+          },
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+            child: Row(
+              children: [
+                Icon(
+                  isSelected
+                      ? Icons.check_circle
+                      : Icons.radio_button_unchecked,
+                  color: isSelected ? Colors.deepPurple : Colors.grey,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        displayName,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 17,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${item['dpr1']}원 / ${item['unit']}',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${_formatNumber(totalPrice)}원',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.deepPurple,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 40,
+                  child: Text(
+                    '$quantity개',
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(fontSize: 18),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 일반 모드: 기존 구조 (Stack + 부분 InkWell)
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      color: _isMoveMode && isSelected ? Colors.deepPurple.shade50 : null,
       child: Stack(
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 40, 16),
             child: Row(
               children: [
-                if (_isMoveMode) ...[
-                  Icon(
-                    isSelected
-                        ? Icons.check_circle
-                        : Icons.radio_button_unchecked,
-                    color: isSelected ? Colors.deepPurple : Colors.grey,
-                  ),
-                  const SizedBox(width: 12),
-                ],
                 Expanded(
                   child: InkWell(
                     onTap: () {
-                      if (_isMoveMode) {
-                        setState(() {
-                          if (isSelected) {
-                            _selectedIds.remove(key);
-                          } else {
-                            _selectedIds.add(key);
-                          }
-                        });
-                      } else {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ShoppingDetailScreen(
-                              item: item,
-                              displayName: displayName,
-                            ),
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ShoppingDetailScreen(
+                            item: item,
+                            displayName: displayName,
                           ),
-                        );
-                      }
+                        ),
+                      );
                     },
                     borderRadius: BorderRadius.circular(4),
                     child: Row(
@@ -327,86 +405,60 @@ class _CartScreenState extends State<CartScreen> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Text(
-                              '${_formatNumber(totalPrice)}원',
-                              textAlign: TextAlign.right,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.deepPurple,
-                              ),
-                            ),
-                            const SizedBox(width: 2),
-                            if (_isMoveMode) ...[
-                              const SizedBox(width: 12),
-                              SizedBox(
-                                width: 40,
-                                child: Text(
-                                  '$quantity개',
-                                  textAlign: TextAlign.right,
-                                  style: const TextStyle(
-                                    fontSize: 18,
-                                    color: Colors.black,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
+                        Text(
+                          '${_formatNumber(totalPrice)}원',
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.deepPurple,
+                          ),
                         ),
                       ],
                     ),
                   ),
                 ),
-                if (!_isMoveMode) ...[
-                  IconButton(
-                    icon: const Icon(Icons.remove_circle_outline),
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    onPressed: quantity <= 1
-                        ? null
-                        : () => _decrementItem(item),
-                  ),
-                  SizedBox(
-                    width: 20,
-                    child: Text(
-                      '$quantity',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
+                IconButton(
+                  icon: const Icon(Icons.remove_circle_outline),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: quantity <= 1 ? null : () => _decrementItem(item),
+                ),
+                SizedBox(
+                  width: 20,
+                  child: Text(
+                    '$quantity',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.add_circle_outline),
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    onPressed: () => _incrementItem(item),
-                  ),
-                ],
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add_circle_outline),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => _incrementItem(item),
+                ),
               ],
             ),
           ),
-          if (!_isMoveMode)
-            Positioned(
-              top: 0,
-              right: 0,
-              child: IconButton(
-                icon: const Icon(Icons.close, size: 16),
-                color: Colors.grey,
-                visualDensity: VisualDensity.compact,
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                padding: EdgeInsets.zero,
-                tooltip: '제거',
-                onPressed: () => _removeFromCart(item),
-              ),
+          Positioned(
+            top: 0,
+            right: 0,
+            child: IconButton(
+              icon: const Icon(Icons.close, size: 16),
+              color: Colors.grey,
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              padding: EdgeInsets.zero,
+              tooltip: '제거',
+              onPressed: () => _removeFromCart(item),
             ),
+          ),
         ],
       ),
     );

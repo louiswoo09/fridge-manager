@@ -110,6 +110,33 @@ class FridgeService {
     return doc.id;
   }
 
+/// 초대 코드 재발급 (소유자만)
+Future<String> regenerateInviteCode(String fridgeId) async {
+  final doc = await _fridgesRef.doc(fridgeId).get();
+  if (!doc.exists) {
+    throw StateError('냉장고를 찾을 수 없습니다');
+  }
+
+  final ownerUid = doc.data()?['ownerUid']?.toString();
+  if (ownerUid != _uid) {
+    throw StateError('소유자만 코드를 재발급할 수 있습니다');
+  }
+
+  // 중복 안 되는 새 코드 생성
+  String code;
+  while (true) {
+    code = _generateInviteCode();
+    final dup = await _fridgesRef
+        .where('inviteCode', isEqualTo: code)
+        .limit(1)
+        .get();
+    if (dup.docs.isEmpty) break;
+  }
+
+  await doc.reference.update({'inviteCode': code});
+  return code;
+}
+
   /// 사용자 displayName 자동 설정 (없으면 기본값)
   Future<void> ensureDisplayName() async {
     final user = FirebaseAuth.instance.currentUser;
