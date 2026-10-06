@@ -46,3 +46,8 @@ app.*.map.json
 
 .vscode/launch.json
 .vscode/settings.json
+
+# FastAPI 서버
+server/venv/
+server/.env
+__pycache__/
