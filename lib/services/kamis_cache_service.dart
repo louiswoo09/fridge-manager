@@ -1,10 +1,7 @@
-import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'product_name_formatter.dart';
-
-const String _kKamisCertKey = String.fromEnvironment('KAMIS_CERT_KEY');
-const String _kKamisCertId = String.fromEnvironment('KAMIS_CERT_ID');
+import '../config/api_config.dart';
 
 class KamisCacheService {
   static final KamisCacheService _instance = KamisCacheService._();
@@ -18,7 +15,7 @@ class KamisCacheService {
   Future<List<Map<String, dynamic>>>? _inflightRequest;
 
   /// 일별 도소매 가격 리스트 가져오기
-  /// 
+  ///
   /// - 30분 이내 캐시 있으면 캐시 반환
   /// - [forceRefresh] true면 캐시 무시하고 새로 fetch
   /// - 동시 호출 시 in-flight request 공유 (중복 호출 방지)
@@ -26,7 +23,8 @@ class KamisCacheService {
     bool forceRefresh = false,
   }) async {
     final now = DateTime.now();
-    final isCacheValid = _cachedItems != null &&
+    final isCacheValid =
+        _cachedItems != null &&
         _fetchedAt != null &&
         now.difference(_fetchedAt!) < _cacheTtl;
 
@@ -39,7 +37,7 @@ class KamisCacheService {
       return _inflightRequest!;
     }
 
-    _inflightRequest = _fetchAndProcess();
+    _inflightRequest = _fetchAndProcess(forceRefresh: forceRefresh);
     try {
       final result = await _inflightRequest!;
       _cachedItems = result;
@@ -56,54 +54,28 @@ class KamisCacheService {
     _fetchedAt = null;
   }
 
-  Future<List<Map<String, dynamic>>> _fetchAndProcess() async {
-    if (_kKamisCertKey.isEmpty || _kKamisCertId.isEmpty) {
-      throw StateError('KAMIS API 키가 설정되지 않았습니다');
-    }
-
+  Future<List<Map<String, dynamic>>> _fetchAndProcess({
+    bool forceRefresh = false,
+  }) async {
     final url = Uri.parse(
-      'http://www.kamis.or.kr/service/price/xml.do'
-      '?action=dailySalesList'
-      '&p_cert_key=$_kKamisCertKey'
-      '&p_cert_id=$_kKamisCertId'
-      '&p_returntype=json',
-    );
+      '$kApiBaseUrl/kamis/daily',
+    ).replace(queryParameters: {'force_refresh': '$forceRefresh'});
 
-    final response = await http.get(url).timeout(const Duration(seconds: 15));
-
+    final response = await http.get(url).timeout(const Duration(seconds: 20));
     if (response.statusCode != 200) {
-      throw HttpException('KAMIS API 응답 오류: ${response.statusCode}');
+      throw HttpException('서버 응답 오류: ${response.statusCode}');
     }
 
-    final data = jsonDecode(response.body);
-    final priceData = data['price'];
+    // 서버 응답에 charset이 없어서 그냥 response.body 쓰면 한글이 깨짐
+    final data = jsonDecode(utf8.decode(response.bodyBytes));
+    final items = ((data['items'] as List?) ?? []).cast<Map<String, dynamic>>();
 
-    if (priceData == null || priceData is! List) {
-      return [];
-    }
-
-    // 소매(productclscode='01')만 + 가격 있는 것만
-    final filtered = priceData
-        .cast<Map<String, dynamic>>()
-        .where((item) {
-          final clsCode = item['product_cls_code']?.toString() ?? '';
-          return clsCode == '01';
-        })
-        .where((item) {
-          final dpr1 = item['dpr1']?.toString().replaceAll(',', '') ?? '';
-          return dpr1.isNotEmpty && dpr1 != '-';
-        })
-        .toList();
-
-    // displayName 기준 중복 제거
+    // 필터링은 서버에서 끝남. 표시 이름 기준 중복 제거만 앱에서
     final seen = <String>{};
     final unique = <Map<String, dynamic>>[];
-    for (final item in filtered) {
+    for (final item in items) {
       final displayName = ProductNameFormatter.format(item);
-      if (!seen.contains(displayName)) {
-        seen.add(displayName);
-        unique.add(item);
-      }
+      if (seen.add(displayName)) unique.add(item);
     }
 
     return unique;
