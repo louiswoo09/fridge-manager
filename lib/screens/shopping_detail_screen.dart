@@ -3,9 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:fl_chart/fl_chart.dart';
-
-const String kKamisCertKey = String.fromEnvironment('KAMIS_CERT_KEY');
-const String kKamisCertId = String.fromEnvironment('KAMIS_CERT_ID');
+import '../config/api_config.dart';
 
 class ShoppingDetailScreen extends StatefulWidget {
   final Map<String, dynamic> item;
@@ -25,7 +23,8 @@ class _ShoppingDetailScreenState extends State<ShoppingDetailScreen> {
   bool _isLoading = true;
   String _trendMode = 'daily';
   final Map<String, List<Map<String, dynamic>>> _trendCache = {};
-  String? _itemCode;
+
+  final List<String> _barLabels = [];
 
   final Map<String, String> _trendOptions = {
     'daily': '최근 40일',
@@ -36,52 +35,7 @@ class _ShoppingDetailScreenState extends State<ShoppingDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _initialize();
-  }
-
-  Future<void> _initialize() async {
-    await _fetchItemCode();
-    await _fetchPriceHistory();
-  }
-
-  Future<void> _fetchItemCode() async {
-    final categoryCode = widget.item['category_code']?.toString() ?? '';
-    final itemName = widget.item['item_name']?.toString() ?? '';
-    if (categoryCode.isEmpty || itemName.isEmpty) return;
-
-    final url = Uri.parse(
-      'http://www.kamis.or.kr/service/price/xml.do'
-      '?action=productInfo'
-      '&p_itemcategorycode=$categoryCode'
-      '&p_cert_key=$kKamisCertKey'
-      '&p_cert_id=$kKamisCertId'
-      '&p_returntype=json',
-    );
-
-    try {
-      final response = await http.get(url).timeout(const Duration(seconds: 15));
-
-      if (response.statusCode != 200) return;
-
-      final data = jsonDecode(response.body);
-      final list = data['info'];
-
-      if (list == null || list is! List) return;
-
-      final cleanItemName = itemName.split('/').first.trim();
-      for (final entry in list) {
-        if (entry is! Map) continue;
-        final entryName = entry['itemname']?.toString() ?? '';
-        if (entryName == cleanItemName) {
-          _itemCode = entry['itemcode']?.toString();
-          break;
-        }
-      }
-
-      debugPrint('찾은 itemcode: $_itemCode (item_name: $cleanItemName)');
-    } catch (e) {
-      debugPrint('코드표 조회 실패: $e');
-    }
+    _fetchPriceHistory();
   }
 
   Future<void> _fetchPriceHistory() async {
@@ -90,230 +44,42 @@ class _ShoppingDetailScreenState extends State<ShoppingDetailScreen> {
       return;
     }
 
-    final productNo = widget.item['productno']?.toString() ?? '';
-    if (productNo.isEmpty) {
-      setState(() => _isLoading = false);
-      return;
-    }
-
+    final mode = _trendMode; // 요청 중에 모드가 바뀌어도 꼬이지 않게 고정
     setState(() => _isLoading = true);
 
-    if (_trendMode == 'daily') {
-      await _fetchDaily(productNo);
-    } else if (_trendMode == 'monthly') {
-      await _fetchMonthly();
-    } else {
-      await _fetchYearly();
-    }
-  }
+    final refPrice = double.tryParse(
+      widget.item['dpr1']?.toString().replaceAll(',', '') ?? '',
+    );
 
-  Future<void> _fetchDaily(String productNo) async {
-    final today = DateTime.now();
-    final dateStr =
-        '${today.year}-'
-        '${today.month.toString().padLeft(2, '0')}-'
-        '${today.day.toString().padLeft(2, '0')}';
-
-    final url = Uri.parse(
-      'http://www.kamis.or.kr/service/price/xml.do'
-      '?action=recentlyPriceTrendList'
-      '&p_productno=$productNo'
-      '&p_regday=$dateStr'
-      '&p_cert_key=$kKamisCertKey'
-      '&p_cert_id=$kKamisCertId'
-      '&p_returntype=json',
+    final url = Uri.parse('$kApiBaseUrl/kamis/trend').replace(
+      queryParameters: {
+        'mode': mode,
+        'product_no': widget.item['productno']?.toString() ?? '',
+        'category_code': widget.item['category_code']?.toString() ?? '',
+        'item_name': widget.item['item_name']?.toString() ?? '',
+        if (refPrice != null && refPrice > 0) 'ref_price': refPrice.toString(),
+      },
     );
 
     try {
-      final response = await http.get(url).timeout(const Duration(seconds: 15));
+      final response = await http.get(url).timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) {
-        if (!mounted) return;
-        setState(() => _isLoading = false);
-        return;
+        throw Exception('서버 응답 오류: ${response.statusCode}');
       }
 
-      final data = jsonDecode(response.body);
-      final priceList = data['price'];
-
-      if (priceList == null || priceList is! List) {
-        if (!mounted) return;
-        setState(() => _isLoading = false);
-        return;
-      }
+      final data = jsonDecode(utf8.decode(response.bodyBytes));
+      final items = ((data['items'] as List?) ?? [])
+          .cast<Map<String, dynamic>>();
 
       if (!mounted) return;
       setState(() {
-        _trendCache['daily'] = priceList.cast<Map<String, dynamic>>();
-        _isLoading = false;
+        _trendCache[mode] = items;
+        if (_trendMode == mode) _isLoading = false;
       });
     } catch (e) {
+      debugPrint('가격 추이 조회 실패: $e');
       if (!mounted) return;
       setState(() => _isLoading = false);
-      debugPrint('일별 조회 실패: $e');
-    }
-  }
-
-  Future<void> _fetchMonthly() async {
-    final categoryCode = widget.item['category_code']?.toString() ?? '';
-    if (_itemCode == null || categoryCode.isEmpty) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      return;
-    }
-
-    final currentYear = DateTime.now().year;
-
-    final url = Uri.parse(
-      'http://www.kamis.or.kr/service/price/xml.do'
-      '?action=monthlySalesList'
-      '&p_yyyy=$currentYear'
-      '&p_period=4'
-      '&p_itemcategorycode=$categoryCode'
-      '&p_itemcode=$_itemCode'
-      '&p_graderank=1'
-      '&p_countycode=1101'
-      '&p_convert_kg_yn=N'
-      '&p_cert_key=$kKamisCertKey'
-      '&p_cert_id=$kKamisCertId'
-      '&p_returntype=json',
-    );
-
-    try {
-      final response = await http.get(url).timeout(const Duration(seconds: 15));
-      debugPrint('월별 응답: ${response.body}');
-
-      if (response.statusCode != 200) {
-        if (!mounted) return;
-        setState(() => _isLoading = false);
-        return;
-      }
-
-      final data = jsonDecode(response.body);
-      final priceData = data['price'];
-
-      if (priceData == null) {
-        if (!mounted) return;
-        setState(() => _isLoading = false);
-        return;
-      }
-
-      final priceList = priceData is List ? priceData : [priceData];
-
-      List<Map<String, dynamic>>? items;
-      for (final entry in priceList) {
-        if (entry is! Map) continue;
-        if (entry['productclscode'] == '01') {
-          final itemList = entry['item'];
-          if (itemList is List) {
-            items = itemList.cast<Map<String, dynamic>>();
-            break;
-          }
-        }
-      }
-
-      if (items == null) {
-        if (!mounted) return;
-        setState(() => _isLoading = false);
-        return;
-      }
-
-      if (!mounted) return;
-      setState(() {
-        _trendCache['monthly'] = items!;
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      debugPrint('월별 조회 실패: $e');
-    }
-  }
-
-  Future<void> _fetchYearly() async {
-    final categoryCode = widget.item['category_code']?.toString() ?? '';
-    if (_itemCode == null || categoryCode.isEmpty) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      return;
-    }
-
-    final currentYear = DateTime.now().year;
-
-    final url = Uri.parse(
-      'http://www.kamis.or.kr/service/price/xml.do'
-      '?action=yearlySalesList'
-      '&p_yyyy=$currentYear'
-      '&p_itemcategorycode=$categoryCode'
-      '&p_itemcode=$_itemCode'
-      '&p_graderank=1'
-      '&p_countycode=1101'
-      '&p_convert_kg_yn=N'
-      '&p_cert_key=$kKamisCertKey'
-      '&p_cert_id=$kKamisCertId'
-      '&p_returntype=json',
-    );
-
-    try {
-      final response = await http.get(url).timeout(const Duration(seconds: 15));
-      debugPrint('연별 응답: ${response.body}');
-
-      if (response.statusCode != 200) {
-        if (!mounted) return;
-        setState(() => _isLoading = false);
-        return;
-      }
-
-      final data = jsonDecode(response.body);
-      final priceData = data['price'];
-
-      if (priceData == null) {
-        if (!mounted) return;
-        setState(() => _isLoading = false);
-        return;
-      }
-
-      final priceList = priceData is List ? priceData : [priceData];
-
-      List<Map<String, dynamic>>? items;
-      for (final entry in priceList) {
-        if (entry is! Map) continue;
-        if (entry['productclscode'] == '01') {
-          // 소매만
-          final itemList = entry['item'];
-          if (itemList is List) {
-            items = itemList.cast<Map<String, dynamic>>();
-            break;
-          }
-        }
-      }
-
-      if (items == null) {
-        if (!mounted) return;
-        setState(() => _isLoading = false);
-        return;
-      }
-
-      // 평년 빼고 연도순 정렬
-      final filtered = items.where((data) {
-        final div = data['div']?.toString() ?? '';
-        return div != '평년';
-      }).toList();
-
-      filtered.sort((a, b) {
-        final yearA = int.tryParse(a['div']?.toString() ?? '') ?? 0;
-        final yearB = int.tryParse(b['div']?.toString() ?? '') ?? 0;
-        return yearA.compareTo(yearB);
-      });
-
-      if (!mounted) return;
-      setState(() {
-        _trendCache['yearly'] = filtered;
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      debugPrint('연별 조회 실패: $e');
     }
   }
 
@@ -370,20 +136,23 @@ class _ShoppingDetailScreenState extends State<ShoppingDetailScreen> {
   }
 
   List<LineChartBarData> _buildDailyBars() {
-    return _trendList
-        .map((data) {
-          final year = data['yyyy']?.toString() ?? '';
-          final spots = _getDailySpots(data);
-          return LineChartBarData(
-            spots: spots,
-            isCurved: true,
-            color: _getDailyLineColor(year),
-            barWidth: 3,
-            dotData: const FlDotData(show: true),
-          );
-        })
-        .where((bar) => bar.spots.isNotEmpty)
-        .toList();
+    final bars = <LineChartBarData>[];
+    for (final data in _trendList) {
+      final spots = _getDailySpots(data);
+      if (spots.isEmpty) continue;
+      final year = data['yyyy']?.toString() ?? '';
+      bars.add(
+        LineChartBarData(
+          spots: spots,
+          isCurved: true,
+          color: _getDailyLineColor(year),
+          barWidth: 3,
+          dotData: const FlDotData(show: true),
+        ),
+      );
+      _barLabels.add(year);
+    }
+    return bars;
   }
 
   List<LineChartBarData> _buildMonthlyBars() {
@@ -414,6 +183,7 @@ class _ShoppingDetailScreenState extends State<ShoppingDetailScreen> {
           dotData: const FlDotData(show: true),
         ),
       );
+      _barLabels.add('$year년');
     }
 
     return bars;
@@ -432,6 +202,8 @@ class _ShoppingDetailScreenState extends State<ShoppingDetailScreen> {
 
     if (spots.isEmpty) return [];
 
+    _barLabels.add('평균');
+
     return [
       LineChartBarData(
         spots: spots,
@@ -444,6 +216,7 @@ class _ShoppingDetailScreenState extends State<ShoppingDetailScreen> {
   }
 
   List<LineChartBarData> _buildBars() {
+    _barLabels.clear(); // 그릴 때마다 새로 기록
     if (_trendMode == 'daily') return _buildDailyBars();
     if (_trendMode == 'monthly') return _buildMonthlyBars();
     return _buildYearlyBars();
@@ -513,10 +286,11 @@ class _ShoppingDetailScreenState extends State<ShoppingDetailScreen> {
       step = 200000;
     }
 
-    final adjustedMin = ((minPrice - padding) / step).floor() * step;
+    final rawMin = ((minPrice - padding) / step).floor() * step;
+    final adjustedMin = rawMin < 0 ? 0.0 : rawMin.toDouble();
     final adjustedMax = ((maxPrice + padding) / step).ceil() * step;
 
-    return (adjustedMin.toDouble(), adjustedMax.toDouble(), step);
+    return (adjustedMin, adjustedMax.toDouble(), step);
   }
 
   Widget _buildLegend() {
@@ -569,14 +343,8 @@ class _ShoppingDetailScreenState extends State<ShoppingDetailScreen> {
   }
 
   String _getTooltipLabel(LineBarSpot spot) {
-    if (_trendMode == 'daily') {
-      return _trendList[spot.barIndex]['yyyy']?.toString() ?? '';
-    } else if (_trendMode == 'monthly') {
-      if (spot.barIndex >= _trendList.length) return '';
-      return '${_trendList[spot.barIndex]['yyyy']}년';
-    } else {
-      return '평균';
-    }
+    if (spot.barIndex < 0 || spot.barIndex >= _barLabels.length) return '';
+    return _barLabels[spot.barIndex];
   }
 
   Widget _priceRow(String label, String value) {
