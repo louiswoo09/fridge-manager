@@ -8,9 +8,11 @@
 
 2. `server` 폴더에 `.env` 파일 생성 
 - 아래 내용 키값이랑 아이디 수정해서 복붙 (공개 안되도록 보안 주의)
+- launch.json에 있는 API키들은 gemini만 남기고 지워도 됨
 ```
 KAMIS_CERT_KEY=키값
 KAMIS_CERT_ID=아이디
+FOOD_API_KEY=식약처키
 ```
 
 3. 터미널에 아래 코드 순서대로 입력 

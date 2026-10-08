@@ -12,8 +12,7 @@ import 'recipe_detail_screen.dart';
 import '../services/product_name_formatter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'favorite_list_screen.dart';
-
-const String kFoodApiKey = String.fromEnvironment('FOOD_API_KEY');
+import '../config/api_config.dart';
 
 class RecipeScreen extends StatefulWidget {
   final RecipeMode initialMode;
@@ -233,65 +232,43 @@ class RecipeScreenState extends State<RecipeScreen> {
     });
   }
 
+  /// 서버를 통해 식약처 레시피 검색
+  Future<List<Map<String, dynamic>>> _requestRecipes(
+    String keyword,
+    String by,
+  ) async {
+    final url = Uri.parse(
+      '$kApiBaseUrl/recipes/search',
+    ).replace(queryParameters: {'keyword': keyword, 'by': by});
+
+    debugPrint('레시피 검색($by): $keyword');
+
+    final response = await http.get(url).timeout(const Duration(seconds: 15));
+    if (response.statusCode != 200) {
+      throw Exception('서버 응답 오류: ${response.statusCode}');
+    }
+
+    final data = jsonDecode(utf8.decode(response.bodyBytes));
+    final rows = ((data['items'] as List?) ?? []).cast<Map<String, dynamic>>();
+
+    return rows
+        .map(
+          (r) => {
+            ...r,
+            'source': '식품의약품안전처',
+            'searched_keywords': [keyword],
+          },
+        )
+        .toList();
+  }
+
   /// 재료명 기반 검색
-  Future<List<Map<String, dynamic>>> _search(String keyword) async {
-    final url = Uri.parse(
-      'https://openapi.foodsafetykorea.go.kr/api/$kFoodApiKey/COOKRCP01/json/1/20/RCP_PARTS_DTLS=${Uri.encodeComponent(keyword)}',
-    );
+  Future<List<Map<String, dynamic>>> _search(String keyword) =>
+      _requestRecipes(keyword, 'ingredient');
 
-    debugPrint('검색 키워드: $keyword');
-
-    final response = await http.get(url).timeout(const Duration(seconds: 10));
-
-    if (response.statusCode != 200) return [];
-
-    final data = jsonDecode(response.body);
-    final cook = data['COOKRCP01'];
-    if (cook == null) return [];
-
-    final rows = (cook['row'] as List?)?.cast<Map<String, dynamic>>();
-    if (rows == null || rows.isEmpty) return [];
-
-    return rows
-        .map(
-          (r) => {
-            ...r,
-            'source': '식품의약품안전처',
-            'searched_keywords': [keyword],
-          },
-        )
-        .toList();
-  }
-
-  /// 요리명 기반 검색 (RCP_NM)
-  Future<List<Map<String, dynamic>>> _searchByName(String keyword) async {
-    final url = Uri.parse(
-      'https://openapi.foodsafetykorea.go.kr/api/$kFoodApiKey/COOKRCP01/json/1/20/RCP_NM=${Uri.encodeComponent(keyword)}',
-    );
-
-    debugPrint('요리명 검색: $keyword');
-
-    final response = await http.get(url).timeout(const Duration(seconds: 10));
-
-    if (response.statusCode != 200) return [];
-
-    final data = jsonDecode(response.body);
-    final cook = data['COOKRCP01'];
-    if (cook == null) return [];
-
-    final rows = (cook['row'] as List?)?.cast<Map<String, dynamic>>();
-    if (rows == null || rows.isEmpty) return [];
-
-    return rows
-        .map(
-          (r) => {
-            ...r,
-            'source': '식품의약품안전처',
-            'searched_keywords': [keyword],
-          },
-        )
-        .toList();
-  }
+  /// 요리명 기반 검색
+  Future<List<Map<String, dynamic>>> _searchByName(String keyword) =>
+      _requestRecipes(keyword, 'name');
 
   void _addToUnique(
     Map<String, Map<String, dynamic>> unique,
@@ -318,12 +295,7 @@ class RecipeScreenState extends State<RecipeScreen> {
 
   Future<void> _fetchSearchRecipes() async {
     if (_isFetching) return;
-
-    if (kFoodApiKey.isEmpty) {
-      _showSnack('API 키가 설정되지 않았습니다');
-      return;
-    }
-
+    
     final raw = _searchKeyword.trim();
     if (raw.isEmpty) {
       _showSnack('검색어를 입력하세요');
@@ -402,12 +374,7 @@ class RecipeScreenState extends State<RecipeScreen> {
     if (_currentMode == RecipeMode.search) {
       return _fetchSearchRecipes();
     }
-
-    if (kFoodApiKey.isEmpty) {
-      _showSnack('API 키가 설정되지 않았습니다');
-      return;
-    }
-
+    
     // 후보 풀: 모드/필터에 따른 전체 재료 (랜덤 칩 채울 때 사용)
     final List<String> candidatePool;
     switch (_currentMode) {
