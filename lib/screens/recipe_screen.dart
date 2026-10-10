@@ -13,6 +13,7 @@ import '../services/product_name_formatter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'favorite_list_screen.dart';
 import '../config/api_config.dart';
+import '../services/fridge_service.dart';
 
 class RecipeScreen extends StatefulWidget {
   final RecipeMode initialMode;
@@ -39,8 +40,11 @@ class RecipeScreenState extends State<RecipeScreen> {
   String _searchKeyword = '';
   final TextEditingController _searchController = TextEditingController();
 
-  late StreamSubscription<List<Ingredient>> _ingredientSub;
+  StreamSubscription<List<Ingredient>>? _ingredientSub;
   StreamSubscription<List<String>>? _cartSub;
+  StreamSubscription<String?>? _activeFridgeSub;
+  String? _activeFridgeId;
+  final FridgeService _fridgeService = FridgeService();
 
   late RecipeMode _currentMode;
   FridgeFilter _fridgeFilter = FridgeFilter.all;
@@ -152,8 +156,36 @@ class RecipeScreenState extends State<RecipeScreen> {
   void initState() {
     super.initState();
     _currentMode = widget.initialMode;
-
     _restoreCachedResult();
+
+    // 활성 냉장고가 정해지면 구독 시작, 바뀌면 다시 구독
+    _activeFridgeSub = _fridgeService.watchActiveFridgeId().listen((id) {
+      if (id == null || !mounted) return;
+      final isSwitch = _activeFridgeId != null; // 첫 진입이 아니라 전환인지
+      _activeFridgeId = id;
+      _subscribeFridgeData(resetResults: isSwitch);
+    });
+  }
+
+  void _subscribeFridgeData({required bool resetResults}) {
+    _ingredientSub?.cancel();
+    _cartSub?.cancel();
+
+    // 다른 화면의 리스너보다 먼저 실행될 수 있어서 여기서도 직접 비움
+    _service.invalidateCache();
+    _cartService.invalidateCache();
+
+    if (resetResults) {
+      _listCache.clearFridgeDependent();
+      setState(() {
+        _items = [];
+        _cartIngredientNames = [];
+        _selectedIngredientNames.clear();
+        _isRandomSelected = false;
+        _isLoading = true;
+        _restoreCachedResult(); // 냉장고/담아놓기 모드면 결과가 비워짐, 검색 모드는 유지
+      });
+    }
 
     _ingredientSub = _service.getIngredients().listen((items) {
       if (!mounted) return;
@@ -173,11 +205,12 @@ class RecipeScreenState extends State<RecipeScreen> {
 
   void _restoreCachedResult() {
     _resultFilterKeyword = null;
-    if (_listCache.hasResult(_currentMode, _fridgeFilter)) {
-      _recipes = _listCache.recipes(_currentMode, _fridgeFilter);
+    if (_listCache.hasResult(_currentMode, _fridgeFilter, _searchType)) {
+      _recipes = _listCache.recipes(_currentMode, _fridgeFilter, _searchType);
       _searchedKeywords = _listCache.searchedKeywords(
         _currentMode,
         _fridgeFilter,
+        _searchType,
       );
       _hasSearched = true;
 
@@ -200,7 +233,8 @@ class RecipeScreenState extends State<RecipeScreen> {
 
   @override
   void dispose() {
-    _ingredientSub.cancel();
+    _activeFridgeSub?.cancel();
+    _ingredientSub?.cancel();
     _cartSub?.cancel();
     _searchController.dispose();
     super.dispose();
@@ -295,7 +329,7 @@ class RecipeScreenState extends State<RecipeScreen> {
 
   Future<void> _fetchSearchRecipes() async {
     if (_isFetching) return;
-    
+
     final raw = _searchKeyword.trim();
     if (raw.isEmpty) {
       _showSnack('검색어를 입력하세요');
@@ -374,7 +408,7 @@ class RecipeScreenState extends State<RecipeScreen> {
     if (_currentMode == RecipeMode.search) {
       return _fetchSearchRecipes();
     }
-    
+
     // 후보 풀: 모드/필터에 따른 전체 재료 (랜덤 칩 채울 때 사용)
     final List<String> candidatePool;
     switch (_currentMode) {

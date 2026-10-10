@@ -5,6 +5,7 @@ class VariantRecipe {
   final List<VariantIngredient> cartIngredients;
   final List<VariantIngredient> seasoning;
   final String? tip;
+  final String? caution; 
   final List<VariantStep> steps;
   final bool insufficient;
 
@@ -15,6 +16,7 @@ class VariantRecipe {
     required this.cartIngredients,
     required this.seasoning,
     this.tip,
+    this.caution, 
     required this.steps,
     required this.insufficient,
   });
@@ -38,6 +40,7 @@ class VariantRecipe {
               .toList() ??
           [],
       tip: json['tip']?.toString(),
+      caution: json['caution']?.toString(), 
       steps: (json['steps'] as List?)
               ?.map((e) => VariantStep.fromJson(e as Map<String, dynamic>))
               .toList() ??

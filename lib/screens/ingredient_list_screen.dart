@@ -13,6 +13,7 @@ import '../main.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/fridge_service.dart';
 import '../services/cart_service.dart';
+import '../services/gemini_cache_service.dart';
 
 class IngredientListScreen extends StatefulWidget {
   final OnRequestRecipeKeywordSearch? onRequestRecipeKeywordSearch;
@@ -42,6 +43,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
   FridgeAnalysis? _analysis;
   bool _isAnalyzing = false;
   String? _analysisError;
+  String? _analysisNotice; // 실패가 아닌 안내 (예: 분석할 재료 없음)
 
   String _selectedCategory = '전체';
   String _selectedStorage = '전체';
@@ -126,6 +128,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
     _service.invalidateCache();
     CartService().invalidateCache();
     _analysisService.invalidateCache();
+    GeminiCacheService().clear();
     FridgeAnalysisService().invalidateCache();
 
     // 활성 냉장고 이름 가져오기
@@ -146,6 +149,9 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
       _items = [];
       _isLoading = true;
       _notificationScheduled = false;
+      _analysis = null; // 다른 냉장고 분석 결과 제거
+      _analysisError = null;
+      _analysisNotice = null;
     });
 
     // 새 식재료 구독 시작
@@ -162,7 +168,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
           _notificationScheduled = true;
           NotificationService.scheduleAllNotifications(_items);
         }
-        _fetchAnalysis(); 
+        _fetchAnalysis();
       },
       onError: (error) {
         if (!mounted) return;
@@ -358,10 +364,24 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
 
   Future<void> _fetchAnalysis({bool forceRefresh = false}) async {
     if (_items.isEmpty) {
+      await _analysisService.clearCurrent();
       if (!mounted) return;
       setState(() {
         _analysis = null;
         _analysisError = null;
+        _analysisNotice = null;
+      });
+      return;
+    }
+
+    // 재료는 있지만 전부 소비기한이 지남 → 서버에 보내지 않고 안내
+    if (_notExpiredItems.isEmpty) {
+      await _analysisService.clearCurrent();
+      if (!mounted) return;
+      setState(() {
+        _analysis = null;
+        _analysisError = null;
+        _analysisNotice = '소비기한이 남은 재료가 없어 분석할 수 없어요';
       });
       return;
     }
@@ -372,6 +392,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
       setState(() {
         _analysis = cached;
         _analysisError = null;
+        _analysisNotice = null;
       });
       return;
     }
@@ -379,6 +400,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
     setState(() {
       _isAnalyzing = true;
       _analysisError = null;
+      _analysisNotice = null;
     });
 
     try {
@@ -395,9 +417,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
       setState(() => _analysisError = '분석 실패. 다시 시도해주세요');
       debugPrint('분석 실패: $e');
     } finally {
-      if (mounted) {
-        setState(() => _isAnalyzing = false);
-      }
+      if (mounted) setState(() => _isAnalyzing = false);
     }
   }
 
@@ -585,6 +605,25 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
   }
 
   Widget _buildAnalysisCard() {
+    if (_analysisNotice != null) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Icon(Icons.info_outline, color: Colors.grey.shade600, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _analysisNotice!,
+                  style: TextStyle(color: Colors.grey.shade700),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     if (_isAnalyzing && _analysis == null) {
       return Card(
         child: Padding(

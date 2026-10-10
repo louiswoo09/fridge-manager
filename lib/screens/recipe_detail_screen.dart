@@ -8,8 +8,7 @@ import '../services/product_name_formatter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/favorite_service.dart';
 import '../models/variant_recipe.dart';
-
-const String kGeminiApiKey = String.fromEnvironment('GEMINI_API_KEY');
+import '../config/api_config.dart';
 
 class RecipeDetailScreen extends StatefulWidget {
   final Map<String, dynamic> recipe;
@@ -61,13 +60,8 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
         '';
 
     final last = _lastViewByRecipe[recipeId];
-    if (last != null) {
-      _currentMode = last.$1;
-      _fridgeFilter = last.$2;
-    } else {
-      _currentMode = widget.mode;
-      _fridgeFilter = widget.fridgeFilter;
-    }
+    _currentMode = _normalizeMode(last?.$1 ?? widget.mode);
+    _fridgeFilter = last?.$2 ?? widget.fridgeFilter;
 
     _favoriteSubscription = _favoriteService.watchFavoriteKeys().listen((keys) {
       if (!mounted) return;
@@ -108,6 +102,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
       _currentMode = mode;
       _restoreCachedResult();
     });
+    _saveCurrentView(); // 추가: 토글 버튼으로 바꾼 모드도 기억
   }
 
   void _onFilterChanged(FridgeFilter? filter) {
@@ -140,6 +135,10 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     _geminiResult = text;
     _variantRecipe = _parseVariantRecipe(text);
   }
+
+  /// 상세 화면은 냉장고/담아놓기 두 모드만 있음 → 그 외(검색 등)는 냉장고로
+  RecipeMode _normalizeMode(RecipeMode mode) =>
+      mode == RecipeMode.shopping ? RecipeMode.shopping : RecipeMode.fridge;
 
   List<String> _getManuals() {
     final manuals = <String>[];
@@ -235,125 +234,10 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     }
   }
 
-  String _buildPrompt() {
-    final recipeName = widget.recipe['RCP_NM'] ?? '';
-    final recipeIngredients = widget.recipe['RCP_PARTS_DTLS'] ?? '';
-    final manuals = _getManuals().join('\n');
-
-    // 검색용 키워드로 정제 (괄호/공백 제거)
-    final cleanedOwned = widget.ownedIngredients
-        .map(ProductNameFormatter.toSearchKeyword)
-        .where((name) => name.isNotEmpty)
-        .toList();
-
-    final cleanedExtra = widget.extraIngredients
-        .map(ProductNameFormatter.toSearchKeyword)
-        .where((name) => name.isNotEmpty)
-        .toList();
-
-    final cleanedImminent = widget.imminentIngredients
-        .map(ProductNameFormatter.toSearchKeyword)
-        .where((name) => name.isNotEmpty)
-        .toList();
-
-    // 냉장고 섹션 — 비어있을 때 명시적으로 표시
-    final ownedSection = cleanedOwned.isEmpty
-        ? '[냉장고 속 재료]\n(없음)'
-        : '''
-[냉장고 속 재료]
-${cleanedOwned.join(', ')}''';
-
-    // 담아놓기 섹션 — shopping 모드 + 비어있지 않을 때만 추가
-    final cartSection =
-        (_currentMode == RecipeMode.shopping && cleanedExtra.isNotEmpty)
-        ? '''
-
-[담아놓기]
-${cleanedExtra.join(', ')}
-
-위 두 목록의 재료를 모두 사용 가능한 것으로 간주하되, [담아놓기] 재료는 사용자가 일부러 선택한 재료이므로 가능하면 적극적으로 활용해줘.'''
-        : '';
-
-    // 임박 재료 섹션 — imminent 모드 + 비어있지 않을 때만 추가
-    final imminentSection =
-        (_currentMode == RecipeMode.fridge &&
-            _fridgeFilter == FridgeFilter.imminent &&
-            cleanedImminent.isNotEmpty)
-        ? '''
-
-[임박 재료 - 반드시 사용]
-${cleanedImminent.join(', ')}
-
-위 재료들은 유통기한이 임박해서 반드시 우선 활용해야 해. 가능한 한 [임박 재료]를 메인 재료로 사용하고, 부족한 부분은 [냉장고 속 재료]에서 보충해줘. 
-[임박 재료]에 해당하는 재료는 응답 JSON에서 imminent 필드를 true로 설정해줘.'''
-        : '';
-
-    return '''
-너는 TV 예능 프로그램 '냉장고를 부탁해'에 출연한 요리 연구가 '젬 쉐프'야. 
-이번 프로그램의 주제는 '[주어진 레시피]를 바탕으로 [냉장고 속 재료] 혹은 [담아놓기] 재료만으로 조리가 가능하도록 레시피를 변형시켜라!'야.
-레시피에 사용하는 재료는 주어진 양념 외에는 반드시 [냉장고 속 재료] 혹은 [담아놓기]에 포함된 것만 사용해야해.
-그러므로 [주어진 레시피]의 재료 중 [냉장고 속 재료]나 [담아놓기]에 없는 것은 제거하거나, [냉장고 속 재료] 혹은 [담아놓기] 내에서 재료의 종류와 역할이 유사한 경우에 대체해서 만들어야해. 소스나 양념류는 양념에서 대체해줘.
-변형시킨 레시피가 [주어진 레시피]와 요리 유형(한식/중식/일식/양식 등), 형식(국/볶음/구이/샐러드 등), 메인 재료(고기/해산물/채소/과일/면 등)이 동일할 수록 높은 평가를 받을거야. 
-물론 변형 레시피가 [주어진 레시피]와 다르더라도 재료 상황에 맞게 자연스럽게 변형하는게 더욱 중요해. 상식에서 벗어난 이상한 레시피는 매우 낮은 평가를 받을거라는걸 꼭 기억해줘.
-조리법을 직관적이면서 먹음직스럽게 작성하면 더욱 좋은 평가를 받을지도 몰라.
-출연진에게 최고로 높은 평가를 받을 수 있도록 노력하자! 
-
-레시피 작성 조건: 
-1. 한국어로 작성할 것. 
-2. 요리 제목(title)은 사용 재료를 나열하지 않고 레시피에 사용할 주재료만 포함하여 자연스럽게 새로 작성할 것. 
-3. 재료(ingredients)의 amount는 분수("1/2") 또는 정수/소수 형태로, unit은 "개", "g", "ml", "스푼", "캔" 등의 명확한 단위로 작성. "약간"같이 정량 어려운 경우만 amount="약간", unit=""로 작성할것.
-4. 양념을 제외한 변형된 레시피의 재료 목록에 없는 재료는 요리 제목이나 조리법에 작성하지 말것.
-5. 현실에 존재하지 않는 가상의 재료나 손질하는데 전문 자격이 필요한 위험한 재료(복어, 독버섯, 야생동물 고기 등)는 [냉장고 속 재료]나 [담아놓기]에 있더라도 절대 사용하지 말것.
-6. 일부 재료(팽이버섯, 은행, 고사리 등)가 독성 또는 위해성을 가질 수 있는 경우, 안전하게 섭취할 수 있는 올바른 조리법을 반드시 포함해서 작성할것.
-7. 조리법(steps)은 최대 8단계 이내로 작성. 각 단계는 다음을 포함할 것:
-   - instruction: 구체적인 동작과 시간을 포함한 설명을 작성. 재료를 삶거나 끓이는 등 조리 시간을 정확히 지정해서 작성하는 경우에만 시간을 포함할 것. 예: "양파를 잘게 썬 후 중불에서 2분간 볶는다". 
-   - ingredients_used: 그 단계에서 사용하는 재료명 리스트.
-   - time_seconds: instruction에 명시한 시간을 초 단위로 (예: 2분 = 120). 시간 없으면 null을 작성할 것.
-   instruction에는 화력(중불/약불/강불), 익힘 정도, 색깔 변화 등 구체적 정보를 가능한 포함해 작성할 것.
-8. 양념(seasoning)은 다음 양념만 추가할것: 소금, 설탕, 간장, 식용유, 참기름, 후추, 고춧가루, 된장, 고추장, 식초, 다진마늘, 마요네즈, 케첩, 밥, 물, 김치.
-9. 요리의 정체성을 유지하는 데 필요한 주재료(예: 고기, 해산물, 면 등)가 [냉장고 속 재료]에 존재하지 않는 경우, 역할이 유사한 대체 재료도 없다면 무리하게 레시피를 변형하지 말고 insufficient를 true로 설정하고 다른 필드는 비운채 tip 필드에 "OO 재료를 더해주시면 훌륭한 요리가 될 것 같아요!" 메시지를 적을것. 
-10. [냉장고 속 재료]나 [담아놓기], 양념을 제외한 권장 재료는 tip 필드에 반드시 원본 레시피가 아닌 변형 레시피를 기준으로 팁을 작성할 것. 
-11. servings는 기본 1인분 기준으로 작성.
-12. 응답은 반드시 아래 스키마의 JSON으로만 작성. 마크다운 ```json 감싸지 말고 순수 JSON만 출력. 설명, 인사말, 결론 일체 작성하지 말 것.
-
-JSON 스키마:
-{
-  "title": "string",
-  "servings": "integer",
-  "ingredients": {
-    "fridge": [{"name": "string", "amount": "string", "unit": 
-    "string", "imminent": "boolean"}],
-    "cart": [{"name": "string", "amount": "string", "unit": 
-    "string", "imminent": "boolean"}],
-    "seasoning": [{"name": "string", "amount": "string", "unit": "string"}]
-  },
-  "tip": "string or null",
-  "steps": [
-    {"order": "integer", "instruction": "string", "ingredients_used": 
-    ["string"], "time_seconds": "integer or null"}
-  ],
-  "insufficient": "boolean"
-}
-
-[주어진 레시피 제목]
-$recipeName
-[주어진 레시피 재료]
-$recipeIngredients
-[주어진 레시피 조리법]
-$manuals
-
-$ownedSection$cartSection$imminentSection
-''';
-  }
-
   Future<void> _callGemini({bool forceRefresh = false}) async {
     if (_isGeminiLoading) return;
-    if (kGeminiApiKey.isEmpty) {
-      _showSnack('Gemini API 키가 설정되지 않았습니다');
-      return;
-    }
 
-    // 모드별 재료 체크
+    // 모드별 재료 체크 (기존 그대로)
     if (_currentMode == RecipeMode.fridge) {
       if (widget.ownedIngredients.isEmpty) {
         _showSnack('냉장고가 비어있어요. 먼저 식재료를 등록해주세요.');
@@ -367,7 +251,6 @@ $ownedSection$cartSection$imminentSection
     } else if (_currentMode == RecipeMode.shopping) {
       final ownedEmpty = widget.ownedIngredients.isEmpty;
       final cartEmpty = widget.extraIngredients.isEmpty;
-
       if (ownedEmpty && cartEmpty) {
         _showSnack('냉장고와 담아놓기가 모두 비어있어요.');
         return;
@@ -376,7 +259,8 @@ $ownedSection$cartSection$imminentSection
         return;
       }
     }
-    // 캐시 확인 (forceRefresh이면 건너뜀)
+
+    // 캐시 확인 (기존 그대로)
     final cacheKey = _buildCacheKey();
     if (!forceRefresh) {
       final cached = _geminiCache.get(cacheKey);
@@ -392,120 +276,75 @@ $ownedSection$cartSection$imminentSection
       _setGeminiResult(null);
     });
 
-    final url = Uri.parse(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=$kGeminiApiKey',
-    );
+    List<String> clean(List<String> names) => names
+        .map(ProductNameFormatter.toSearchKeyword)
+        .where((n) => n.isNotEmpty)
+        .toList();
 
-    final prompt = _buildPrompt();
     final body = jsonEncode({
-      "contents": [
-        {
-          "parts": [
-            {"text": prompt},
-          ],
-        },
-      ],
-      "generationConfig": {"responseMimeType": "application/json"},
+      'recipe_name': widget.recipe['RCP_NM']?.toString() ?? '',
+      'recipe_ingredients': widget.recipe['RCP_PARTS_DTLS']?.toString() ?? '',
+      'manuals': _getManuals(),
+      'owned': clean(widget.ownedIngredients),
+      'cart': clean(widget.extraIngredients),
+      'imminent': clean(widget.imminentIngredients),
+      'mode': _currentMode == RecipeMode.shopping ? 'shopping' : 'fridge',
+      'imminent_only':
+          _currentMode == RecipeMode.fridge &&
+          _fridgeFilter == FridgeFilter.imminent,
     });
 
     try {
-      int? errorCode;
-      String? errorDetail;
-      const maxAttempts = 3;
-      const delays = [Duration(seconds: 1), Duration(seconds: 3)];
+      final response = await http
+          .post(
+            Uri.parse('$kApiBaseUrl/ai/recipe-variant'),
+            headers: {'Content-Type': 'application/json'},
+            body: body,
+          )
+          .timeout(const Duration(seconds: 90));
 
-      for (int attempt = 0; attempt < maxAttempts; attempt++) {
-        try {
-          final response = await http
-              .post(
-                url,
-                headers: {'Content-Type': 'application/json'},
-                body: body,
-              )
-              .timeout(const Duration(seconds: 60));
+      if (!mounted) return;
 
-          if (response.statusCode == 200) {
-            final data = jsonDecode(response.body);
-            final candidates = data['candidates'];
-            if (candidates == null || candidates.isEmpty) {
-              throw Exception('응답 없음');
-            }
-            final parts = candidates[0]['content']?['parts'];
-            if (parts == null || parts.isEmpty) {
-              throw Exception('parts 없음');
-            }
-            final text = parts[0]['text'];
-            if (text == null || text.trim().isEmpty) {
-              if (mounted) {
-                setState(() {
-                  _geminiResult = null;
-                  _variantRecipe = null;
-                });
-                _showSnack('추천 결과가 없습니다');
-              }
-              return;
-            }
-
-            debugPrint('Gemini 응답:\n$text');
-
-            // 파싱 테스트
-            try {
-              final json = jsonDecode(text);
-              final recipe = VariantRecipe.fromJson(
-                json as Map<String, dynamic>,
-              );
-              debugPrint(
-                '파싱 성공: ${recipe.title}, 재료 ${recipe.fridgeIngredients.length}개',
-              );
-            } catch (e) {
-              debugPrint('파싱 실패: $e');
-            }
-
-            if (!mounted) return;
-            _geminiCache.put(cacheKey, text);
-            setState(() => _setGeminiResult(text));
-            return;
-          }
-
-          errorCode = response.statusCode;
-          debugPrint(
-            'Gemini 실패 (status=$errorCode, attempt=${attempt + 1}): ${response.body}',
-          );
-
-          // 5xx 또는 429만 재시도
-          final shouldRetry =
-              (errorCode >= 500 || errorCode == 429) &&
-              attempt < maxAttempts - 1;
-          if (!shouldRetry) break;
-          await Future.delayed(delays[attempt]);
-        } on TimeoutException {
-          errorDetail = 'timeout';
-          debugPrint('Gemini timeout (attempt=${attempt + 1})');
-          if (attempt < maxAttempts - 1) {
-            await Future.delayed(delays[attempt]);
-            continue;
-          }
-          break;
-        }
+      if (response.statusCode != 200) {
+        _showSnack(
+          response.statusCode == 504
+              ? '요청 시간이 초과되었습니다'
+              : 'AI 응답 오류 (코드 ${response.statusCode})',
+        );
+        return;
       }
 
-      // 모든 시도 실패
-      if (!mounted) return;
-      final msg = errorDetail == 'timeout'
-          ? '요청 시간이 초과되었습니다'
-          : (errorCode != null
-                ? 'AI 응답 오류 (코드 $errorCode)'
-                : 'AI 응답 오류가 발생했습니다');
-      _showSnack(msg);
+      final data = jsonDecode(utf8.decode(response.bodyBytes));
+      final text = (data['text'] as String?) ?? '';
+
+      if (text.trim().isEmpty) {
+        setState(() => _setGeminiResult(null));
+        _showSnack('추천 결과가 없습니다');
+        return;
+      }
+
+      debugPrint('Gemini 응답:\n$text');
+      _geminiCache.put(cacheKey, text);
+      setState(() => _setGeminiResult(text));
+    } on TimeoutException {
+      _showSnack('요청 시간이 초과되었습니다');
     } catch (e) {
-      if (!mounted) return;
       _showSnack('AI 응답 오류가 발생했습니다');
-      debugPrint('Gemini 예외: $e');
+      debugPrint('레시피 변형 실패: $e');
     } finally {
-      if (mounted) {
-        setState(() => _isGeminiLoading = false);
-      }
+      if (mounted) setState(() => _isGeminiLoading = false);
     }
+  }
+
+  /// 실제 소비기한 기준 임박 재료 (검색용 이름으로 정리)
+  late final Set<String> _imminentNames = widget.imminentIngredients
+      .map(ProductNameFormatter.toSearchKeyword)
+      .where((n) => n.isNotEmpty)
+      .toSet();
+
+  /// AI가 정한 값이 아니라 실제 임박 목록으로 판단
+  bool _isImminent(VariantIngredient ing) {
+    return _imminentNames.any((n) => ing.name == n || ing.name.contains(n));
   }
 
   String? _findAmountForName(String name) {
@@ -611,8 +450,35 @@ $ownedSection$cartSection$imminentSection
             _buildIngredientSection('장바구니 재료', recipe.cartIngredients),
           if (recipe.seasoning.isNotEmpty)
             _buildIngredientSection('양념', recipe.seasoning),
-
-          // 팁
+          // 레시피 주의점
+          if (recipe.caution != null && recipe.caution!.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    size: 18,
+                    color: Colors.red.shade400,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _buildNoteLines(
+                      recipe.caution!,
+                      Colors.red.shade400,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          // 레시피 팁
           if (recipe.tip != null && recipe.tip!.isNotEmpty) ...[
             const SizedBox(height: 12),
             Container(
@@ -631,10 +497,7 @@ $ownedSection$cartSection$imminentSection
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      recipe.tip!,
-                      style: const TextStyle(fontSize: 13, height: 1.4),
-                    ),
+                    child: _buildNoteLines(recipe.tip!, Colors.amber.shade700),
                   ),
                 ],
               ),
@@ -689,15 +552,15 @@ $ownedSection$cartSection$imminentSection
                     '• ${ing.name}',
                     style: TextStyle(
                       fontSize: 14,
-                      fontWeight: ing.imminent
+                      fontWeight: _isImminent(ing)
                           ? FontWeight.bold
                           : FontWeight.normal,
-                      color: ing.imminent
+                      color: _isImminent(ing)
                           ? Colors.red.shade700
                           : Colors.black87,
                     ),
                   ),
-                  if (ing.imminent) ...[
+                  if (_isImminent(ing)) ...[
                     const SizedBox(width: 4),
                     Container(
                       padding: const EdgeInsets.symmetric(
@@ -820,6 +683,53 @@ $ownedSection$cartSection$imminentSection
           ],
         ),
       ),
+    );
+  }
+
+  /// 줄바꿈으로 나뉜 안내문을 번호 동그라미와 함께 표시
+  /// 한 줄이면 번호 없이, AI가 혹시 붙인 "1." "-" "•" 등은 지우고 다시 매김
+  Widget _buildNoteLines(String text, Color accent) {
+    final lines = text
+        .split('\n')
+        .map(
+          (l) => l.replaceFirst(RegExp(r'^\s*(\d+[.)]|[•\-])\s*'), '').trim(),
+        )
+        .where((l) => l.isNotEmpty)
+        .toList();
+
+    const style = TextStyle(fontSize: 13, height: 1.4);
+
+    if (lines.length <= 1) {
+      return Text(lines.isEmpty ? text : lines.first, style: style);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (int i = 0; i < lines.length; i++)
+          Padding(
+            padding: EdgeInsets.only(bottom: i == lines.length - 1 ? 0 : 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+  width: 13,
+  child: Text(
+    '${i + 1}.',
+    style: TextStyle(
+      fontSize: 13,
+      height: 1.4,
+      color: accent,
+      fontWeight: FontWeight.bold,
+    ),
+  ),
+),
+                const SizedBox(width: 6),
+                Expanded(child: Text(lines[i], style: style)),
+              ],
+            ),
+          ),
+      ],
     );
   }
 

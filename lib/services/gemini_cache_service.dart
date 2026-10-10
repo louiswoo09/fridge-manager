@@ -1,9 +1,10 @@
 import 'dart:collection';
 
-/// Gemini 변형 결과를 메모리에 캐시 (LRU)
-/// 
-/// 같은 (레시피 + 보유재료 + 담아놓기재료 + 모드) 조합으로 다시 변형 요청하면
-/// 캐시된 결과 반환. 앱 재시작하면 사라짐 (세션 캐시).
+/// Gemini 변형 결과를 메모리에 캐시 (LRU, 최대 30개)
+///
+/// 키: 모드 + 레시피 ID (+ 임박 필터, 즐겨찾기 진입 세션)
+/// 재료가 바뀌어도 자동 갱신되지 않음 → "다시 변형하기"로 새로 요청
+/// 활성 냉장고가 바뀌면 전체 초기화. 앱 재시작하면 사라짐.
 class GeminiCacheService {
   static final GeminiCacheService _instance = GeminiCacheService._();
   factory GeminiCacheService() => _instance;
