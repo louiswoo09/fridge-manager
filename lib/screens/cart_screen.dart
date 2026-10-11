@@ -6,6 +6,7 @@ import 'add_ingredient_screen.dart';
 import '../services/product_name_formatter.dart';
 import '../services/kamis_cache_service.dart';
 import '../models/recipe_mode.dart';
+import '../services/api_client.dart';
 
 typedef OnRequestRecipe = void Function(RecipeMode mode);
 
@@ -22,20 +23,21 @@ class _CartScreenState extends State<CartScreen> {
   final CartService _cartService = CartService();
   final KamisCacheService _kamisCache = KamisCacheService();
   bool _isLoading = true;
-  Set<String> _cartKeys = {};
+  List<Map<String, dynamic>> _cartDocs = [];
   Map<String, int> _quantities = {};
   bool _isMoveMode = false;
   final Set<String> _selectedIds = {};
   List<Map<String, dynamic>> _allItems = [];
-  StreamSubscription<List<String>>? _cartSubscription;
+  StreamSubscription<List<Map<String, dynamic>>>? _cartSubscription;
   StreamSubscription<Map<String, int>>? _quantitySubscription;
+  String? _loadError;
 
   @override
   void initState() {
     super.initState();
-    _cartSubscription = _cartService.watchKeys().listen((keys) {
+    _cartSubscription = _cartService.watchItems().listen((docs) {
       if (!mounted) return;
-      setState(() => _cartKeys = keys.toSet());
+      setState(() => _cartDocs = docs);
     });
     _quantitySubscription = _cartService.watchQuantities().listen((map) {
       if (!mounted) return;
@@ -59,7 +61,10 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   Future<void> _fetchData() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
 
     try {
       final items = await _kamisCache.getDailyItems();
@@ -69,10 +74,12 @@ class _CartScreenState extends State<CartScreen> {
         _isLoading = false;
       });
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
       debugPrint('KAMIS API 오류: $e');
-      _showSnack('가격 정보를 불러오지 못했어요');
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _loadError = friendlyError(e, fallback: '가격 정보를 불러오지 못했어요');
+      });
     }
   }
 
@@ -90,10 +97,14 @@ class _CartScreenState extends State<CartScreen> {
     );
   }
 
+  /// 가격 정보가 없는 품목은 저장해둔 이름을, 있으면 KAMIS 이름 포맷을 사용
+  String _nameOf(Map<String, dynamic> item) =>
+      (item['_displayName'] as String?) ?? ProductNameFormatter.format(item);
+
   Future<void> _incrementItem(Map<String, dynamic> item) async {
     final productNo = item['productno']?.toString() ?? '';
     final productName = item['productName']?.toString() ?? '';
-    final displayName = ProductNameFormatter.format(item);
+    final displayName = _nameOf(item);
     if (productNo.isEmpty) return;
     await _cartService.add(
       productNo: productNo,
@@ -117,7 +128,7 @@ class _CartScreenState extends State<CartScreen> {
     final productName = item['productName']?.toString() ?? '';
     if (productNo.isEmpty) return;
 
-    final displayName = ProductNameFormatter.format(item);
+    final displayName = _nameOf(item);
 
     final confirm = await showDialog<bool>(
       context: context,
@@ -159,9 +170,7 @@ class _CartScreenState extends State<CartScreen> {
 
       final productNo = item['productno']?.toString() ?? '';
       final productName = item['productName']?.toString() ?? '';
-      final cleanName = ProductNameFormatter.toSearchKeyword(
-        ProductNameFormatter.format(item),
-      );
+      final cleanName = ProductNameFormatter.toSearchKeyword(_nameOf(item));
 
       final savedName = await Navigator.push<String>(
         context,
@@ -193,10 +202,31 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   List<Map<String, dynamic>> get _cartItems {
-    return _allItems.where((item) {
-      final productNo = item['productno']?.toString() ?? '';
-      final productName = item['productName']?.toString() ?? '';
-      return _cartService.contains(_cartKeys, productNo, productName);
+    // 오늘 KAMIS 목록을 키로 찾기 쉽게
+    final priced = <String, Map<String, dynamic>>{};
+    for (final item in _allItems) {
+      final key = _cartService.keyFor(
+        item['productno']?.toString() ?? '',
+        item['productName']?.toString() ?? '',
+      );
+      priced[key] = item;
+    }
+
+    // 기준은 Firestore에 담긴 품목 전부
+    return _cartDocs.map((doc) {
+      final found = priced[doc['_key']];
+      if (found != null) return found;
+
+      // 오늘 가격 목록에 없는 품목 → 저장된 정보로 표시 (가격 없음)
+      return <String, dynamic>{
+        'productno': doc['productno']?.toString() ?? '',
+        'productName': doc['productName']?.toString() ?? '',
+        '_displayName':
+            doc['displayName']?.toString() ??
+            doc['productName']?.toString() ??
+            '',
+        '_noPrice': true,
+      };
     }).toList();
   }
 
@@ -249,28 +279,50 @@ class _CartScreenState extends State<CartScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : cartItems.isEmpty
-          ? const Center(
+          ? Center(
               child: Padding(
-                padding: EdgeInsets.all(32),
+                padding: const EdgeInsets.all(32),
                 child: Text(
-                  '담아놓기 화면이 비어있어요.\n\n가격 동향에서 + 버튼으로 담아보세요.',
+                  _loadError ?? '담아놓기 화면이 비어있어요\n\n마음에 드는 식재료를 담아보세요',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey, height: 1.5),
+                  style: const TextStyle(color: Colors.grey, height: 1.5),
                 ),
               ),
             )
-          : ListView.builder(
-              itemCount: cartItems.length,
-              itemBuilder: (context, index) {
-                final item = cartItems[index];
-                return _buildCartItem(item);
-              },
+          : Column(
+              children: [
+                // 가격을 못 받아온 경우: 목록은 보여주되 이유를 위에 표시
+                if (_loadError != null)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      _loadError!.replaceAll('\n\n', ' '),
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: cartItems.length,
+                    itemBuilder: (context, index) {
+                      final item = cartItems[index];
+                      return _buildCartItem(item);
+                    },
+                  ),
+                ),
+              ],
             ),
     );
   }
 
   Widget _buildCartItem(Map<String, dynamic> item) {
-    final displayName = ProductNameFormatter.format(item);
+    final displayName = _nameOf(item);
+    final noPrice = item['_noPrice'] == true;
     final quantity = _quantityOf(item);
     final productNo = item['productno']?.toString() ?? '';
     final productName = item['productName']?.toString() ?? '';
@@ -322,7 +374,9 @@ class _CartScreenState extends State<CartScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${item['dpr1']}원 / ${item['unit']}',
+                        noPrice
+                            ? '오늘 가격 정보 없음'
+                            : '${item['dpr1']}원 / ${item['unit']}',
                         style: const TextStyle(
                           fontSize: 14,
                           color: Colors.grey,
@@ -333,7 +387,7 @@ class _CartScreenState extends State<CartScreen> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '${_formatNumber(totalPrice)}원',
+                  noPrice ? '-' : '${_formatNumber(totalPrice)}원',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -368,6 +422,7 @@ class _CartScreenState extends State<CartScreen> {
                 Expanded(
                   child: InkWell(
                     onTap: () {
+                      if (noPrice) return;
                       Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -395,7 +450,9 @@ class _CartScreenState extends State<CartScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                '${item['dpr1']}원 / ${item['unit']}',
+                                noPrice
+                                    ? '오늘 가격 정보 없음'
+                                    : '${item['dpr1']}원 / ${item['unit']}',
                                 style: const TextStyle(
                                   fontSize: 14,
                                   color: Colors.grey,
@@ -406,7 +463,7 @@ class _CartScreenState extends State<CartScreen> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          '${_formatNumber(totalPrice)}원',
+                          noPrice ? '-' : '${_formatNumber(totalPrice)}원',
                           textAlign: TextAlign.right,
                           style: const TextStyle(
                             fontSize: 16,

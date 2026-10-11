@@ -1,14 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import '../models/recipe_mode.dart';
 import '../services/gemini_cache_service.dart';
 import '../services/product_name_formatter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/favorite_service.dart';
 import '../models/variant_recipe.dart';
-import '../config/api_config.dart';
+import '../services/api_client.dart';
 
 class RecipeDetailScreen extends StatefulWidget {
   final Map<String, dynamic> recipe;
@@ -295,13 +294,11 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     });
 
     try {
-      final response = await http
-          .post(
-            Uri.parse('$kApiBaseUrl/ai/recipe-variant'),
-            headers: {'Content-Type': 'application/json'},
-            body: body,
-          )
-          .timeout(const Duration(seconds: 90));
+      final response = await ApiClient.post(
+        '/ai/recipe-variant',
+        body,
+        timeout: const Duration(seconds: 90),
+      );
 
       if (!mounted) return;
 
@@ -326,10 +323,8 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
       debugPrint('Gemini 응답:\n$text');
       _geminiCache.put(cacheKey, text);
       setState(() => _setGeminiResult(text));
-    } on TimeoutException {
-      _showSnack('요청 시간이 초과되었습니다');
     } catch (e) {
-      _showSnack('AI 응답 오류가 발생했습니다');
+      _showSnack(friendlyError(e, fallback: 'AI 응답 오류가 발생했습니다'));
       debugPrint('레시피 변형 실패: $e');
     } finally {
       if (mounted) setState(() => _isGeminiLoading = false);
@@ -713,17 +708,17 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 SizedBox(
-  width: 13,
-  child: Text(
-    '${i + 1}.',
-    style: TextStyle(
-      fontSize: 13,
-      height: 1.4,
-      color: accent,
-      fontWeight: FontWeight.bold,
-    ),
-  ),
-),
+                  width: 13,
+                  child: Text(
+                    '${i + 1}.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.4,
+                      color: accent,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
                 const SizedBox(width: 6),
                 Expanded(child: Text(lines[i], style: style)),
               ],

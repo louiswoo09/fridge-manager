@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import '../models/ingredient.dart';
 import '../models/recipe_mode.dart';
 import '../services/ingredient_service.dart';
@@ -12,8 +11,8 @@ import 'recipe_detail_screen.dart';
 import '../services/product_name_formatter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'favorite_list_screen.dart';
-import '../config/api_config.dart';
 import '../services/fridge_service.dart';
+import '../services/api_client.dart';
 
 class RecipeScreen extends StatefulWidget {
   final RecipeMode initialMode;
@@ -43,7 +42,6 @@ class RecipeScreenState extends State<RecipeScreen> {
   StreamSubscription<List<Ingredient>>? _ingredientSub;
   StreamSubscription<List<String>>? _cartSub;
   StreamSubscription<String?>? _activeFridgeSub;
-  String? _activeFridgeId;
   final FridgeService _fridgeService = FridgeService();
 
   late RecipeMode _currentMode;
@@ -56,7 +54,9 @@ class RecipeScreenState extends State<RecipeScreen> {
   bool _isFetching = false;
   bool _hasSearched = false;
   String _searchedKeywords = '';
-  String? _resultFilterKeyword; // null = 전체 표시
+  String? _resultFilterKeyword;
+  String? _loadError;
+  String? _activeFridgeId;
 
   bool _isIgnored(String name) {
     const ignore = {'소금', '설탕', '후추', '기름', '간장'};
@@ -204,6 +204,7 @@ class RecipeScreenState extends State<RecipeScreen> {
   }
 
   void _restoreCachedResult() {
+    _loadError = null;
     _resultFilterKeyword = null;
     if (_listCache.hasResult(_currentMode, _fridgeFilter, _searchType)) {
       _recipes = _listCache.recipes(_currentMode, _fridgeFilter, _searchType);
@@ -271,13 +272,12 @@ class RecipeScreenState extends State<RecipeScreen> {
     String keyword,
     String by,
   ) async {
-    final url = Uri.parse(
-      '$kApiBaseUrl/recipes/search',
-    ).replace(queryParameters: {'keyword': keyword, 'by': by});
-
     debugPrint('레시피 검색($by): $keyword');
-
-    final response = await http.get(url).timeout(const Duration(seconds: 15));
+    final response = await ApiClient.get(
+      '/recipes/search',
+      query: {'keyword': keyword, 'by': by},
+      timeout: const Duration(seconds: 15),
+    );
     if (response.statusCode != 200) {
       throw Exception('서버 응답 오류: ${response.statusCode}');
     }
@@ -348,6 +348,7 @@ class RecipeScreenState extends State<RecipeScreen> {
       _recipes = [];
       _hasSearched = false;
       _searchedKeywords = '';
+      _loadError = null;
     });
 
     try {
@@ -380,21 +381,14 @@ class RecipeScreenState extends State<RecipeScreen> {
         _searchedKeywords = finalKeywords;
         _resultFilterKeyword = null;
       });
-    } on TimeoutException {
-      if (!mounted) return;
-      setState(() {
-        _recipes = [];
-        _hasSearched = true;
-      });
-      _showSnack('요청 시간이 초과되었습니다');
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _recipes = [];
         _hasSearched = true;
+        _loadError = friendlyError(e, fallback: '레시피를 불러오지 못했어요');
       });
-      _showSnack('네트워크 오류가 발생했습니다');
-      debugPrint('검색 실패: $e');
+      debugPrint('레시피 불러오기 실패: $e');
     } finally {
       if (mounted) {
         setState(() => _isFetching = false);
@@ -490,6 +484,7 @@ class RecipeScreenState extends State<RecipeScreen> {
       _recipes = [];
       _hasSearched = false;
       _searchedKeywords = '';
+      _loadError = null;
     });
 
     try {
@@ -550,20 +545,13 @@ class RecipeScreenState extends State<RecipeScreen> {
         _searchedKeywords = finalKeywords;
         _resultFilterKeyword = null;
       });
-    } on TimeoutException {
-      if (!mounted) return;
-      setState(() {
-        _recipes = [];
-        _hasSearched = true;
-      });
-      _showSnack('요청 시간이 초과되었습니다');
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _recipes = [];
         _hasSearched = true;
+        _loadError = friendlyError(e, fallback: '레시피를 불러오지 못했어요');
       });
-      _showSnack('네트워크 오류가 발생했습니다');
       debugPrint('레시피 불러오기 실패: $e');
     } finally {
       if (mounted) {
@@ -650,6 +638,7 @@ class RecipeScreenState extends State<RecipeScreen> {
   }
 
   String get _emptyMessage {
+    if (_loadError != null) return _loadError!;
     if (_hasSearched) {
       // 필터 켜서 0개면 다른 안내
       if (_resultFilterKeyword != null) {
@@ -971,6 +960,7 @@ class RecipeScreenState extends State<RecipeScreen> {
                                   _recipes = [];
                                   _hasSearched = false;
                                   _searchedKeywords = '';
+                                  _loadError = null;
                                 });
                               },
                             ),
@@ -1086,7 +1076,12 @@ class RecipeScreenState extends State<RecipeScreen> {
                       ? const Center(child: CircularProgressIndicator())
                       : _filteredRecipes
                             .isEmpty // _recipes → _filteredRecipes
-                      ? Center(child: Text(_emptyMessage))
+                      ? Center(
+                          child: Text(
+                            _emptyMessage,
+                            textAlign: TextAlign.center,
+                          ),
+                        )
                       : ListView.builder(
                           itemCount: _filteredRecipes.length,
                           itemBuilder: (context, index) {

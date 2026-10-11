@@ -6,6 +6,8 @@ import 'login_screen.dart';
 import 'fridge_detail_screen.dart';
 import 'join_fridge_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -261,9 +263,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       await _fridgeService.togglePin(fridgeId);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(currentPinned ? '$name 핀 해제' : '$name 핀 고정'),
-        ),
+        SnackBar(content: Text(currentPinned ? '$name 핀 해제' : '$name 핀 고정')),
       );
     } catch (e) {
       if (!mounted) return;
@@ -332,6 +332,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _buildFridgeSection(),
 
             const SizedBox(height: 32),
+
+            // 개발용: 서버 /docs 테스트할 때 쓰는 ID 토큰 복사 (릴리스 빌드에선 사라짐)
+            if (kDebugMode)
+              TextButton.icon(
+                onPressed: () async {
+                  final token = await FirebaseAuth.instance.currentUser
+                      ?.getIdToken();
+                  if (token == null) return;
+                  await Clipboard.setData(ClipboardData(text: token));
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('ID 토큰 복사됨 (1시간 유효)')),
+                  );
+                },
+                icon: const Icon(Icons.key, size: 16),
+                label: const Text('ID 토큰 복사(개발용)'),
+              ),
 
             // 로그아웃 버튼
             Padding(

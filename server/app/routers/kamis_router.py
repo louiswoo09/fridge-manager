@@ -8,8 +8,11 @@ from app.services import kamis_service
 
 from typing import Literal
 
+from fastapi import Depends
+from app.auth import get_current_uid
 
-router = APIRouter(prefix="/kamis", tags=["KAMIS"])
+
+router = APIRouter(prefix="/kamis", tags=["KAMIS"], dependencies=[Depends(get_current_uid)])
 logger = logging.getLogger(__name__)
 
 

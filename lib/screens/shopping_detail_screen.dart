@@ -1,9 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:fl_chart/fl_chart.dart';
-import '../config/api_config.dart';
+import '../services/api_client.dart';
 
 class ShoppingDetailScreen extends StatefulWidget {
   final Map<String, dynamic> item;
@@ -26,6 +25,8 @@ class _ShoppingDetailScreenState extends State<ShoppingDetailScreen> {
 
   final List<String> _barLabels = [];
 
+  String? _trendError;
+
   final Map<String, String> _trendOptions = {
     'daily': '최근 40일',
     'monthly': '월평균',
@@ -40,29 +41,35 @@ class _ShoppingDetailScreenState extends State<ShoppingDetailScreen> {
 
   Future<void> _fetchPriceHistory() async {
     if (_trendCache.containsKey(_trendMode)) {
-      setState(() => _isLoading = false);
+      setState(() {
+        _isLoading = false;
+        _trendError = null;
+      });
       return;
     }
 
     final mode = _trendMode; // 요청 중에 모드가 바뀌어도 꼬이지 않게 고정
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _trendError = null;
+    });
 
     final refPrice = double.tryParse(
       widget.item['dpr1']?.toString().replaceAll(',', '') ?? '',
     );
 
-    final url = Uri.parse('$kApiBaseUrl/kamis/trend').replace(
-      queryParameters: {
-        'mode': mode,
-        'product_no': widget.item['productno']?.toString() ?? '',
-        'category_code': widget.item['category_code']?.toString() ?? '',
-        'item_name': widget.item['item_name']?.toString() ?? '',
-        if (refPrice != null && refPrice > 0) 'ref_price': refPrice.toString(),
-      },
-    );
-
     try {
-      final response = await http.get(url).timeout(const Duration(seconds: 20));
+      final response = await ApiClient.get(
+        '/kamis/trend',
+        query: {
+          'mode': mode,
+          'product_no': widget.item['productno']?.toString() ?? '',
+          'category_code': widget.item['category_code']?.toString() ?? '',
+          'item_name': widget.item['item_name']?.toString() ?? '',
+          if (refPrice != null && refPrice > 0)
+            'ref_price': refPrice.toString(),
+        },
+      );
       if (response.statusCode != 200) {
         throw Exception('서버 응답 오류: ${response.statusCode}');
       }
@@ -78,8 +85,11 @@ class _ShoppingDetailScreenState extends State<ShoppingDetailScreen> {
       });
     } catch (e) {
       debugPrint('가격 추이 조회 실패: $e');
-      if (!mounted) return;
-      setState(() => _isLoading = false);
+      if (!mounted || _trendMode != mode) return; // 다른 모드로 바뀌었으면 무시
+      setState(() {
+        _isLoading = false;
+        _trendError = friendlyError(e, fallback: '가격 추이를 불러오지 못했어요');
+      });
     }
   }
 
@@ -492,10 +502,13 @@ class _ShoppingDetailScreenState extends State<ShoppingDetailScreen> {
             if (_isLoading)
               const Center(child: CircularProgressIndicator())
             else if (lineBars.isEmpty)
-              const Center(
+              Center(
                 child: Padding(
-                  padding: EdgeInsets.all(32),
-                  child: Text('가격 추이 정보가 없습니다'),
+                  padding: const EdgeInsets.all(32),
+                  child: Text(
+                    _trendError ?? '가격 추이 정보가 없습니다',
+                    textAlign: TextAlign.center,
+                  ),
                 ),
               )
             else

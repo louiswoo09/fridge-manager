@@ -1,7 +1,6 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'product_name_formatter.dart';
-import '../config/api_config.dart';
+import 'api_client.dart';
 
 class KamisCacheService {
   static final KamisCacheService _instance = KamisCacheService._();
@@ -57,11 +56,10 @@ class KamisCacheService {
   Future<List<Map<String, dynamic>>> _fetchAndProcess({
     bool forceRefresh = false,
   }) async {
-    final url = Uri.parse(
-      '$kApiBaseUrl/kamis/daily',
-    ).replace(queryParameters: {'force_refresh': '$forceRefresh'});
-
-    final response = await http.get(url).timeout(const Duration(seconds: 20));
+    final response = await ApiClient.get(
+      '/kamis/daily',
+      query: {'force_refresh': '$forceRefresh'},
+    );
     if (response.statusCode != 200) {
       throw HttpException('서버 응답 오류: ${response.statusCode}');
     }

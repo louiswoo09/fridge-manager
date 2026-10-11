@@ -7,6 +7,7 @@ import '../services/product_name_formatter.dart';
 import '../services/kamis_cache_service.dart';
 import '../models/recipe_mode.dart';
 import '../services/fridge_service.dart';
+import '../services/api_client.dart';
 
 typedef OnRequestRecipe = void Function(RecipeMode mode);
 
@@ -27,6 +28,7 @@ class _ShoppingScreenState extends State<ShoppingScreen>
   String _searchQuery = '';
   String _sortMode = 'discount';
   String _comparisonBase = 'dpr3';
+  String? _loadError;
   List<Map<String, dynamic>> _allItems = [];
 
   final KamisCacheService _kamisCache = KamisCacheService();
@@ -103,16 +105,10 @@ class _ShoppingScreenState extends State<ShoppingScreen>
     super.dispose();
   }
 
-  void _showSnack(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(msg)));
-  }
-
   Future<void> _fetchData({bool forceRefresh = false}) async {
     setState(() {
       _isLoading = true;
+      _loadError = null;
       if (forceRefresh) _allItems = [];
     });
 
@@ -124,10 +120,12 @@ class _ShoppingScreenState extends State<ShoppingScreen>
         _isLoading = false;
       });
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
       debugPrint('KAMIS API 오류: $e');
-      _showSnack('가격 정보를 불러오지 못했어요');
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _loadError = friendlyError(e, fallback: '가격 정보를 불러오지 못했어요');
+      });
     }
   }
 
@@ -473,9 +471,11 @@ class _ShoppingScreenState extends State<ShoppingScreen>
                       if (items.isEmpty) {
                         return Center(
                           child: Text(
-                            _searchQuery.isNotEmpty
-                                ? '검색 결과가 없어요.'
-                                : '가격 정보가 없습니다',
+                            _loadError ??
+                                (_searchQuery.isNotEmpty
+                                    ? '검색 결과가 없어요.'
+                                    : '가격 정보가 없습니다'),
+                            textAlign: TextAlign.center,
                           ),
                         );
                       }

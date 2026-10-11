@@ -3,10 +3,9 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import '../models/ingredient.dart';
 import '../services/product_name_formatter.dart';
-import '../config/api_config.dart';
+import 'api_client.dart';
 
 class FridgeAnalysis {
   final String status;
@@ -199,16 +198,11 @@ class FridgeAnalysisService {
         .toSet()
         .toList();
 
-    final response = await http
-        .post(
-          Uri.parse('$kApiBaseUrl/ai/fridge-analysis'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'ingredients': cleanedAll,
-            'imminent': cleanedImminent,
-          }),
-        )
-        .timeout(const Duration(seconds: 60));
+    final response = await ApiClient.post(
+      '/ai/fridge-analysis',
+      jsonEncode({'ingredients': cleanedAll, 'imminent': cleanedImminent}),
+      timeout: const Duration(seconds: 60),
+    );
 
     if (response.statusCode != 200) {
       throw Exception('분석 실패 (코드 ${response.statusCode})');

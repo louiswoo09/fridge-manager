@@ -5,7 +5,10 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.services import recipe_service
 
-router = APIRouter(prefix="/recipes", tags=["레시피"])
+from fastapi import Depends
+from app.auth import get_current_uid
+
+router = APIRouter(prefix="/recipes", tags=["레시피"], dependencies=[Depends(get_current_uid)])
 logger = logging.getLogger(__name__)
 
 

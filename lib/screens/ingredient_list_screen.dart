@@ -14,6 +14,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/fridge_service.dart';
 import '../services/cart_service.dart';
 import '../services/gemini_cache_service.dart';
+import '../services/api_client.dart';
 
 class IngredientListScreen extends StatefulWidget {
   final OnRequestRecipeKeywordSearch? onRequestRecipeKeywordSearch;
@@ -414,7 +415,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
       setState(() => _analysis = result);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _analysisError = '분석 실패. 다시 시도해주세요');
+      setState(() => _analysisError = friendlyError(e, fallback: '분석 실패. 다시 시도해주세요'));
       debugPrint('분석 실패: $e');
     } finally {
       if (mounted) setState(() => _isAnalyzing = false);

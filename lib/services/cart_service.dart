@@ -91,6 +91,14 @@ class CartService {
     });
   }
 
+  /// 담긴 품목 전체 (문서 내용 + '_key')
+  Stream<List<Map<String, dynamic>>> watchItems() async* {
+    final ref = await _cartRef();
+    yield* ref.snapshots().map(
+      (snap) => snap.docs.map((d) => {...d.data(), '_key': d.id}).toList(),
+    );
+  }
+
   Future<void> add({
     required String productNo,
     required String productName,

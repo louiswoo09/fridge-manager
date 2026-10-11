@@ -6,7 +6,10 @@ from pydantic import BaseModel, Field
 
 from app.services import ai_service, gemini_service
 
-router = APIRouter(prefix="/ai", tags=["AI"])
+from fastapi import Depends
+from app.auth import get_current_uid
+
+router = APIRouter(prefix="/ai", tags=["AI"], dependencies=[Depends(get_current_uid)])
 logger = logging.getLogger(__name__)
 
 
