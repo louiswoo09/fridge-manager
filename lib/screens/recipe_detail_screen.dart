@@ -303,11 +303,11 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
       if (!mounted) return;
 
       if (response.statusCode != 200) {
-        _showSnack(
-          response.statusCode == 504
-              ? '요청 시간이 초과되었습니다'
-              : 'AI 응답 오류 (코드 ${response.statusCode})',
-        );
+        _showSnack(switch (response.statusCode) {
+          503 => friendlyError(AiBusyException(), fallback: ''),
+          504 => '요청 시간이 초과되었습니다',
+          _ => 'AI 응답 오류 (코드 ${response.statusCode})',
+        });
         return;
       }
 

@@ -6,7 +6,7 @@ import httpx
 from app.config import settings
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-RETRY_DELAYS = [1, 3]   # 5xx / 429 일 때 1초, 3초 쉬고 재시도 (기존 앱과 동일)
+RETRY_DELAYS = [2, 3]   # 5xx / 429 오류 일 때 2초 쉬고 한번, 3초 쉬고 한번 더 시도(총 3번 시도)
 
 logger = logging.getLogger(__name__)
 

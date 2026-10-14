@@ -32,6 +32,9 @@ class AnalysisRequest(BaseModel):
 def _to_http_error(e: Exception, what: str) -> HTTPException:
     if isinstance(e, gemini_service.GeminiTimeout):
         return HTTPException(status_code=504, detail="AI 응답 시간이 초과되었습니다")
+    if isinstance(e, gemini_service.GeminiError) and e.status in (429, 503):
+        logger.warning("%s: Gemini 혼잡 (status=%s)", what, e.status)
+        return HTTPException(status_code=503, detail="AI 요청이 많습니다")
     logger.exception("%s 실패", what)
     return HTTPException(status_code=502, detail="AI 응답 오류가 발생했습니다")
 

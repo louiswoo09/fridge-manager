@@ -13,10 +13,16 @@ class ServerUnavailableException implements Exception {
   String toString() => '서버에 연결할 수 없어요';
 }
 
+/// AI(Gemini)가 혼잡해서 처리 못 함
+class AiBusyException implements Exception {}
+
 /// 에러를 사용자에게 보여줄 문장으로 바꿈
 String friendlyError(Object e, {required String fallback}) {
   if (e is ServerUnavailableException) {
     return '서버에 연결할 수 없어요\n\n잠시 후 다시 시도해주세요';
+  }
+  if (e is AiBusyException) {
+    return 'AI 요청이 몰리고 있어요\n\n잠시 후 다시 시도해주세요';
   }
   if (e is TimeoutException) {
     return '응답이 너무 오래 걸려요\n\n잠시 후 다시 시도해주세요';
@@ -44,7 +50,9 @@ class ApiClient {
       token = await user.getIdToken(forceRefresh);
     } on FirebaseAuthException catch (e) {
       // 토큰 갱신 중 인터넷이 끊긴 경우
-      if (e.code == 'network-request-failed') throw ServerUnavailableException();
+      if (e.code == 'network-request-failed') {
+        throw ServerUnavailableException();
+      }
       rethrow;
     }
     if (token == null) throw StateError('인증 토큰을 받지 못했어요');
@@ -64,8 +72,9 @@ class ApiClient {
     try {
       var res = await request(await _headers(json: json)).timeout(timeout);
       if (res.statusCode == 401) {
-        res = await request(await _headers(json: json, forceRefresh: true))
-            .timeout(timeout);
+        res = await request(
+          await _headers(json: json, forceRefresh: true),
+        ).timeout(timeout);
       }
       return res;
     } on SocketException {

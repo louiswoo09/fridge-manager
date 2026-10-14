@@ -2,7 +2,7 @@ import asyncio
 import logging
 import time
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 
@@ -23,6 +23,12 @@ TREND_KEYS = {
     "yearly": ["avg_data"],
 }
 
+KST = timezone(timedelta(hours=9))
+
+
+def _today_kst() -> date:
+    """서버 시간대와 상관없이 한국 날짜 (Cloud Run은 UTC로 동작)"""
+    return datetime.now(KST).date()
 
 # ───────── 공통 ─────────
 

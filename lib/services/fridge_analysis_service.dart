@@ -204,6 +204,7 @@ class FridgeAnalysisService {
       timeout: const Duration(seconds: 60),
     );
 
+    if (response.statusCode == 503) throw AiBusyException();
     if (response.statusCode != 200) {
       throw Exception('분석 실패 (코드 ${response.statusCode})');
     }

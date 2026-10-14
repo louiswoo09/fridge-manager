@@ -28,7 +28,7 @@ async def get_daily(force_refresh: bool = False):
     return {
         "count": len(items),
         "cached": cached,
-        "fetched_at": datetime.fromtimestamp(fetched_at).isoformat(),
+        "fetched_at": datetime.fromtimestamp(fetched_at, kamis_service.KST).isoformat(),
         "items": items,
     }
 

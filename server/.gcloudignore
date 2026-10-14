@@ -1,0 +1,7 @@
+.gcloudignore
+.env
+venv/
+__pycache__/
+*.pyc
+README.md
+Dockerfile.local
