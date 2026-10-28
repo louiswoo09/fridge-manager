@@ -1,3 +1,9 @@
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 from fastapi import FastAPI
 
 from app.routers import ai_router, kamis_router, recipe_router

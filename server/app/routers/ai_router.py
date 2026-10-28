@@ -1,4 +1,6 @@
 import logging
+import base64
+import binascii
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
@@ -28,16 +30,19 @@ class AnalysisRequest(BaseModel):
     ingredients: list[str] = Field(..., min_length=1, max_length=300)
     imminent: list[str] = Field(default_factory=list, max_length=300)
 
+class RecognizeRequest(BaseModel):
+    image_base64: str = Field(..., min_length=100, max_length=7_000_000)
+    mime_type: Literal["image/jpeg", "image/png", "image/webp"] = "image/jpeg"
 
 def _to_http_error(e: Exception, what: str) -> HTTPException:
     if isinstance(e, gemini_service.GeminiTimeout):
+        logger.warning("%s: Gemini 응답 시간 초과", what)   # ← 이 줄만 추가
         return HTTPException(status_code=504, detail="AI 응답 시간이 초과되었습니다")
     if isinstance(e, gemini_service.GeminiError) and e.status in (429, 503):
         logger.warning("%s: Gemini 혼잡 (status=%s)", what, e.status)
         return HTTPException(status_code=503, detail="AI 요청이 많습니다")
     logger.exception("%s 실패", what)
     return HTTPException(status_code=502, detail="AI 응답 오류가 발생했습니다")
-
 
 @router.post("/recipe-variant")
 async def recipe_variant(req: VariantRequest):
@@ -65,3 +70,26 @@ async def fridge_analysis(req: AnalysisRequest):
 
     status, suggestion = ai_service.parse_analysis(text)
     return {"status": status, "suggestion": suggestion}
+
+@router.post("/recognize-ingredients")
+async def recognize_ingredients(req: RecognizeRequest):
+    try:
+        raw = base64.b64decode(req.image_base64, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=400, detail="이미지 형식이 올바르지 않습니다")
+    if len(raw) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="이미지가 너무 큽니다")
+
+    try:
+        text = await gemini_service.generate(
+            ai_service.RECOGNIZE_PROMPT,
+            json_mode=True,
+            timeout=90,
+            image=(req.mime_type, req.image_base64),
+            thinking_level="minimal",
+        )
+    except Exception as e:
+        raise _to_http_error(e, "식재료 인식")
+
+    # 사진은 저장하지 않고 결과만 돌려줌
+    return ai_service.parse_recognition(text)

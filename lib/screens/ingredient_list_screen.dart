@@ -15,6 +15,9 @@ import '../services/fridge_service.dart';
 import '../services/cart_service.dart';
 import '../services/gemini_cache_service.dart';
 import '../services/api_client.dart';
+import 'package:image_picker/image_picker.dart';
+import '../services/ingredient_recognition_service.dart';
+import 'recognition_review_screen.dart';
 
 class IngredientListScreen extends StatefulWidget {
   final OnRequestRecipeKeywordSearch? onRequestRecipeKeywordSearch;
@@ -415,10 +418,113 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
       setState(() => _analysis = result);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _analysisError = friendlyError(e, fallback: '분석 실패. 다시 시도해주세요'));
+      setState(
+        () => _analysisError = friendlyError(e, fallback: '분석 실패. 다시 시도해주세요'),
+      );
       debugPrint('분석 실패: $e');
     } finally {
       if (mounted) setState(() => _isAnalyzing = false);
+    }
+  }
+
+  Future<void> _startPhotoRecognition() async {
+    setState(() => _isMenuOpen = false);
+
+    // 1. 촬영 / 앨범 선택
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera),
+              title: const Text('카메라로 촬영'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('앨범에서 선택'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+
+    final file = await IngredientRecognitionService.pickImage(source);
+    if (file == null || !mounted) return;
+
+    // 2. 인식 중 안내 (닫을 수 없게)
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Expanded(child: Text('사진에서 식재료를 찾는 중이에요\n잠시만 기다려주세요')),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final result = await IngredientRecognitionService.recognize(file);
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop(); // 안내 닫기
+
+      // 찾은 게 없으면 안내만
+      if (result.items.isEmpty) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('식재료를 찾지 못했어요'),
+            contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+            actionsPadding: const EdgeInsets.fromLTRB(24, 0, 16, 12),
+            content: const Text('식재료나 영수증이 잘 보이게 다시 찍어주세요.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('확인'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+
+      // 확인·수정 화면
+      final ingredients = await Navigator.push<List<Ingredient>>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => RecognitionReviewScreen(result: result),
+        ),
+      );
+      if (ingredients == null || ingredients.isEmpty || !mounted) return;
+
+      // 일괄 등록
+      try {
+        await _service.addMany(ingredients);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${ingredients.length}개 재료를 등록했어요')),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('등록 중 오류: $e')));
+      }
+    } catch (e) {
+      debugPrint('식재료 인식 실패: $e');
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop(); // 안내 닫기
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(e, fallback: '식재료 인식에 실패했어요'))),
+      );
     }
   }
 
@@ -579,6 +685,13 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
                     },
                     icon: const Icon(Icons.add),
                     label: const Text('재료 추가'),
+                  ),
+                  const SizedBox(height: 8),
+                  FloatingActionButton.extended(
+                    heroTag: 'ingredient_photo',
+                    onPressed: _startPhotoRecognition,
+                    icon: const Icon(Icons.photo_camera),
+                    label: const Text('사진으로 추가'),
                   ),
                   const SizedBox(height: 8),
                   FloatingActionButton.extended(

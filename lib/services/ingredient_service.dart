@@ -98,6 +98,22 @@ class IngredientService {
         .update(ingredient.toMap(isCreate: false));
   }
 
+  /// 여러 재료를 한 번에 추가 (사진·영수증 인식 결과 등록용)
+  Future<void> addMany(List<Ingredient> ingredients) async {
+    if (ingredients.isEmpty) return;
+    final fridgeId = await _getActiveFridgeId();
+    final col = _db
+        .collection('fridges')
+        .doc(fridgeId)
+        .collection('ingredients');
+
+    final batch = _db.batch();
+    for (final ingredient in ingredients) {
+      batch.set(col.doc(), ingredient.toMap());
+    }
+    await batch.commit();
+  }
+
   /// 식재료 휴지통으로 (소프트 삭제)
   Future<void> softDeleteIngredient(String id) async {
     final fridgeId = await _getActiveFridgeId();

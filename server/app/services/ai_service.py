@@ -1,3 +1,5 @@
+import json
+
 # ───────── 레시피 AI 변형 ─────────
 
 VARIANT_RULES = """너는 TV 예능 프로그램 '냉장고를 부탁해'에 출연한 요리 연구가 '젬 쉐프'야. 
@@ -140,3 +142,117 @@ def parse_analysis(text: str) -> tuple[str, str]:
         elif line.startswith("추천 요리:"):
             suggestion = line.removeprefix("추천 요리:").strip()
     return status or "분석 정보 없음", suggestion or "추천 없음"
+
+# ───────── 식재료 사진 / 영수증 인식 ─────────
+
+RECOGNIZE_PROMPT = """너는 식재료 인식 전문가야. 사진을 보고 냉장고에 등록할 식재료 목록을 JSON으로만 답해.
+
+[사진 종류 판단]
+- 식재료(채소, 과일, 고기, 해산물, 유제품, 가공식품 등)가 찍힌 사진이면 source_type은 "ingredients"
+- 마트나 시장 영수증이면 source_type은 "receipt"
+- 둘 다 아니면 source_type은 "none", items는 빈 배열
+
+[식재료 사진 규칙]
+1. 사진에서 확실히 보이는 식재료만 작성할 것. 보이지 않는 재료를 추측해서 만들지 말 것.
+2. 같은 재료가 여러 개면 하나로 합치고 quantity에 개수를 적을 것.
+3. 포장된 제품은 상품명이 아니라 일반적인 재료명으로 작성할 것. (예: "OO농장 무항생제 계란" → "계란")
+4. 완성된 요리, 반찬, 포장 음식은 재료로 나누지 말고 음식 이름 그대로 하나의 품목으로 작성하고, category는 "기타"로 할 것.
+
+[영수증 규칙]
+1. 식재료와 식품만 작성하고, 봉투, 세제, 생활용품, 할인 표시, 합계 같은 줄은 제외할 것.
+2. 상품명에서 브랜드, 원산지, 중량 표기를 빼고 일반적인 재료명으로 작성할 것. (예: "국산깐마늘500g" → "깐마늘")
+3. 영수증의 수량을 quantity로 쓰되, 상품명에 중량이나 용량이 있으면 그 값과 단위를 사용할 것. (예: "돼지앞다리 600g" 1개 → quantity 600, unit "g")
+4. 글자가 흐려서 읽을 수 없는 품목은 제외할 것.
+
+[공통 규칙]
+- name: 한국어 일반 재료명, 15자 이내
+- category: 채소, 육류, 유제품, 과일, 해산물, 기타 중 하나
+- unit: 개, g, ml, L, 팩 중 하나. 개수로 세는 재료는 "개"
+- quantity: 정수
+- storage: 냉장, 냉동, 실온 중 그 재료를 보통 보관하는 방법
+- 대마, 양귀비 등 마약류나 독버섯처럼 먹으면 위험한 것은 작성하지 말 것.
+- 응답은 아래 JSON 형식으로만 작성하고 설명은 쓰지 말 것.
+
+{"source_type": "ingredients", "items": [{"name": "양파", "category": "채소", "quantity": 3, "unit": "개", "storage": "실온"}]}
+"""
+
+CATEGORIES = {"채소", "육류", "유제품", "과일", "해산물", "기타"}
+UNITS = {"개", "g", "ml", "L", "팩"}
+STORAGES = {"냉장", "냉동", "실온"}
+
+# 앱에 없는 단위를 앱 단위로 바꿈: 단위 → (바꿀 단위, 곱할 값)
+UNIT_ALIASES = {
+    "kg": ("g", 1000), "킬로그램": ("g", 1000), "그램": ("g", 1),
+    "mL": ("ml", 1), "ML": ("ml", 1), "l": ("L", 1), "리터": ("L", 1),
+    "봉": ("팩", 1), "봉지": ("팩", 1), "묶음": ("팩", 1), "단": ("팩", 1),
+    "병": ("개", 1), "캔": ("개", 1), "마리": ("개", 1), "모": ("개", 1),
+    "송이": ("개", 1), "알": ("개", 1),
+}
+
+MAX_RECOGNIZED_ITEMS = 30
+BANNED_KEYWORDS = ("대마", "양귀비", "마약", "아편", "필로폰", "환각")
+
+
+def is_banned(name: str) -> bool:
+    return any(b in name for b in BANNED_KEYWORDS)
+
+
+def _to_number(value) -> float:
+    try:
+        return float(str(value).replace(",", "").strip())
+    except (TypeError, ValueError):
+        return 1.0
+
+
+def parse_recognition(text: str) -> dict:
+    """Gemini 응답을 앱이 그대로 쓸 수 있는 값으로 정리"""
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return {"source_type": "none", "items": []}
+    if not isinstance(data, dict):
+        return {"source_type": "none", "items": []}
+
+    source = data.get("source_type")
+    if source not in ("ingredients", "receipt", "none"):
+        source = "none"
+
+    raw_items = data.get("items")
+    if not isinstance(raw_items, list):
+        raw_items = []
+
+    merged: dict[tuple[str, str], dict] = {}
+    for raw in raw_items[:MAX_RECOGNIZED_ITEMS]:
+        if not isinstance(raw, dict):
+            continue
+
+        name = str(raw.get("name") or "").strip()[:30]
+        if not name or is_banned(name):
+            continue
+
+        category = raw.get("category") if raw.get("category") in CATEGORIES else "기타"
+        storage = raw.get("storage") if raw.get("storage") in STORAGES else "냉장"
+
+        unit = str(raw.get("unit") or "개").strip()
+        qty = _to_number(raw.get("quantity"))
+        if unit not in UNITS:
+            unit, factor = UNIT_ALIASES.get(unit, ("개", 1))
+            qty *= factor
+        # 앱 수량은 정수라 1.5L 같은 값은 ml로
+        if unit == "L" and qty != int(qty):
+            unit, qty = "ml", qty * 1000
+        quantity = max(1, round(qty))
+
+        key = (name, unit)
+        if key in merged:
+            merged[key]["quantity"] += quantity
+        else:
+            merged[key] = {
+                "name": name,
+                "category": category,
+                "quantity": quantity,
+                "unit": unit,
+                "storage": storage,
+            }
+
+    return {"source_type": source, "items": list(merged.values())}

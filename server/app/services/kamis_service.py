@@ -43,7 +43,8 @@ async def _kamis_get(params: dict) -> dict:
     }
     async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
         res = await client.get(KAMIS_URL, params=full)
-    res.raise_for_status()
+    if res.status_code >= 400:
+        raise RuntimeError(f"KAMIS 응답 오류 ({res.status_code})")
     return res.json()
 
 

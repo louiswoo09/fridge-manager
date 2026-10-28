@@ -9,7 +9,8 @@ class Settings:
     kamis_cert_id: str = os.getenv("KAMIS_CERT_ID", "").strip()
     food_api_key: str = os.getenv("FOOD_API_KEY", "").strip()
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "").strip()
-    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite").strip()
+    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite").strip()
+    gemini_fallback_model: str = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-3.1-flash-lite").strip()
     firebase_project_id: str = os.getenv("FIREBASE_PROJECT_ID", "").strip()
 
 

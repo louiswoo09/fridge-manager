@@ -29,7 +29,8 @@ async def _fetch_from_food_api(by: str, keyword: str) -> list[dict]:
     )
     async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
         res = await client.get(url)
-    res.raise_for_status()
+    if res.status_code >= 400:
+        raise RuntimeError(f"식약처 API 응답 오류 ({res.status_code})")
 
     cook = res.json().get("COOKRCP01")
     if not isinstance(cook, dict):
