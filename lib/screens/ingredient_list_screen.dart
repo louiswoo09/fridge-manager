@@ -18,6 +18,7 @@ import '../services/api_client.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/ingredient_recognition_service.dart';
 import 'recognition_review_screen.dart';
+import 'photo_collect_screen.dart';
 
 class IngredientListScreen extends StatefulWidget {
   final OnRequestRecipeKeywordSearch? onRequestRecipeKeywordSearch;
@@ -430,49 +431,32 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
   Future<void> _startPhotoRecognition() async {
     setState(() => _isMenuOpen = false);
 
-    // 1. 촬영 / 앨범 선택
-    final source = await showModalBottomSheet<ImageSource>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_camera),
-              title: const Text('카메라로 촬영'),
-              onTap: () => Navigator.pop(ctx, ImageSource.camera),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: const Text('앨범에서 선택'),
-              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
-            ),
-          ],
-        ),
-      ),
+    // 1. 사진 모으기 (앱 안 카메라 + 앨범, 최대 5장)
+    final photos = await Navigator.push<List<XFile>>(
+      context,
+      MaterialPageRoute(builder: (_) => const PhotoCollectScreen()),
     );
-    if (source == null || !mounted) return;
-
-    final file = await IngredientRecognitionService.pickImage(source);
-    if (file == null || !mounted) return;
+    if (photos == null || photos.isEmpty || !mounted) return;
 
     // 2. 인식 중 안내 (닫을 수 없게)
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const AlertDialog(
+      builder: (_) => AlertDialog(
         content: Row(
           children: [
-            CircularProgressIndicator(),
-            SizedBox(width: 16),
-            Expanded(child: Text('사진에서 식재료를 찾는 중이에요\n잠시만 기다려주세요')),
+            const CircularProgressIndicator(),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text('사진 ${photos.length}장에서 식재료를 찾는 중이에요\n잠시만 기다려주세요'),
+            ),
           ],
         ),
       ),
     );
 
     try {
-      final result = await IngredientRecognitionService.recognize(file);
+      final result = await IngredientRecognitionService.recognize(photos);
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop(); // 안내 닫기
 
@@ -500,7 +484,8 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
       final ingredients = await Navigator.push<List<Ingredient>>(
         context,
         MaterialPageRoute(
-          builder: (_) => RecognitionReviewScreen(result: result),
+          builder: (_) =>
+              RecognitionReviewScreen(result: result, photos: photos),
         ),
       );
       if (ingredients == null || ingredients.isEmpty || !mounted) return;
@@ -672,8 +657,10 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 if (_isMenuOpen) ...[
-                  FloatingActionButton.extended(
+                  _menuButton(
                     heroTag: 'ingredient_add',
+                    icon: Icons.add,
+                    label: '재료 추가',
                     onPressed: () {
                       setState(() => _isMenuOpen = false);
                       Navigator.push(
@@ -683,19 +670,19 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
                         ),
                       );
                     },
-                    icon: const Icon(Icons.add),
-                    label: const Text('재료 추가'),
                   ),
                   const SizedBox(height: 8),
-                  FloatingActionButton.extended(
+                  _menuButton(
                     heroTag: 'ingredient_photo',
+                    icon: Icons.photo_camera,
+                    label: '사진으로 추가',
                     onPressed: _startPhotoRecognition,
-                    icon: const Icon(Icons.photo_camera),
-                    label: const Text('사진으로 추가'),
                   ),
                   const SizedBox(height: 8),
-                  FloatingActionButton.extended(
+                  _menuButton(
                     heroTag: 'ingredient_delete',
+                    icon: Icons.delete,
+                    label: '재료 삭제',
                     onPressed: () {
                       setState(() {
                         _isMenuOpen = false;
@@ -703,8 +690,6 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
                         _selectedIds.clear();
                       });
                     },
-                    icon: const Icon(Icons.delete),
-                    label: const Text('재료 삭제'),
                   ),
                   const SizedBox(height: 8),
                 ],
@@ -715,6 +700,29 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
                 ),
               ],
             ),
+    );
+  }
+
+  /// 메뉴 버튼 (아이콘 세로 정렬 + 글자 왼쪽 정렬)
+  Widget _menuButton({
+    required String heroTag,
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return FloatingActionButton.extended(
+      heroTag: heroTag,
+      onPressed: onPressed,
+      icon: Icon(icon),
+      label: SizedBox(
+        width: 88,
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          softWrap: false,
+        ),
+      ),
     );
   }
 

@@ -30,9 +30,19 @@ class AnalysisRequest(BaseModel):
     ingredients: list[str] = Field(..., min_length=1, max_length=300)
     imminent: list[str] = Field(default_factory=list, max_length=300)
 
-class RecognizeRequest(BaseModel):
-    image_base64: str = Field(..., min_length=100, max_length=7_000_000)
+
+MAX_IMAGES = 5
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+MAX_TOTAL_BYTES = 15 * 1024 * 1024
+
+
+class ImageInput(BaseModel):
+    data: str = Field(..., min_length=100, max_length=7_000_000)
     mime_type: Literal["image/jpeg", "image/png", "image/webp"] = "image/jpeg"
+
+
+class RecognizeRequest(BaseModel):
+    images: list[ImageInput] = Field(..., min_length=1, max_length=MAX_IMAGES)
 
 def _to_http_error(e: Exception, what: str) -> HTTPException:
     if isinstance(e, gemini_service.GeminiTimeout):
@@ -73,23 +83,27 @@ async def fridge_analysis(req: AnalysisRequest):
 
 @router.post("/recognize-ingredients")
 async def recognize_ingredients(req: RecognizeRequest):
-    try:
-        raw = base64.b64decode(req.image_base64, validate=True)
-    except (binascii.Error, ValueError):
-        raise HTTPException(status_code=400, detail="이미지 형식이 올바르지 않습니다")
-    if len(raw) > 5 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="이미지가 너무 큽니다")
+    total = 0
+    for img in req.images:
+        try:
+            raw = base64.b64decode(img.data, validate=True)
+        except (binascii.Error, ValueError):
+            raise HTTPException(status_code=400, detail="이미지 형식이 올바르지 않습니다")
+        if len(raw) > MAX_IMAGE_BYTES:
+            raise HTTPException(status_code=413, detail="이미지가 너무 큽니다")
+        total += len(raw)
+    if total > MAX_TOTAL_BYTES:
+        raise HTTPException(status_code=413, detail="이미지 전체 용량이 너무 큽니다")
 
     try:
         text = await gemini_service.generate(
             ai_service.RECOGNIZE_PROMPT,
             json_mode=True,
             timeout=90,
-            image=(req.mime_type, req.image_base64),
+            images=[(img.mime_type, img.data) for img in req.images],
             thinking_level="minimal",
         )
     except Exception as e:
         raise _to_http_error(e, "식재료 인식")
 
-    # 사진은 저장하지 않고 결과만 돌려줌
     return ai_service.parse_recognition(text)

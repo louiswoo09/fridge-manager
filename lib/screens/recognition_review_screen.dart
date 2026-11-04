@@ -1,13 +1,20 @@
 import 'package:flutter/material.dart';
 import '../models/ingredient.dart';
 import '../services/ingredient_recognition_service.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 
 /// 사진·영수증 인식 결과를 확인하고 고친 뒤 등록할 재료 목록을 돌려주는 화면
 /// 등록 버튼을 누르면 고친 재료 목록을 이전 화면으로 돌려줌
 class RecognitionReviewScreen extends StatefulWidget {
   final RecognitionResult result;
+  final List<XFile> photos;
 
-  const RecognitionReviewScreen({super.key, required this.result});
+  const RecognitionReviewScreen({
+    super.key,
+    required this.result,
+    this.photos = const [],
+  });
 
   @override
   State<RecognitionReviewScreen> createState() =>
@@ -31,8 +38,8 @@ class _Draft {
     required this.unit,
     required this.storage,
     required this.expirationDate,
-  })  : name = TextEditingController(text: name),
-        quantity = TextEditingController(text: '$quantity');
+  }) : name = TextEditingController(text: name),
+       quantity = TextEditingController(text: '$quantity');
 
   void dispose() {
     name.dispose();
@@ -53,8 +60,11 @@ class _RecognitionReviewScreenState extends State<RecognitionReviewScreen> {
 
   DateTime get _defaultExpiration {
     final now = DateTime.now();
-    return DateTime(now.year, now.month, now.day)
-        .add(const Duration(days: _defaultShelfDays));
+    return DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).add(const Duration(days: _defaultShelfDays));
   }
 
   /// 서버가 이미 정리해서 보내지만, 혹시 모를 값은 기본값으로
@@ -129,9 +139,9 @@ class _RecognitionReviewScreenState extends State<RecognitionReviewScreen> {
     if (selected.isEmpty) return;
 
     if (selected.any((d) => d.name.text.trim().isEmpty)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('이름이 비어 있는 재료가 있어요')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('이름이 비어 있는 재료가 있어요')));
       return;
     }
 
@@ -174,6 +184,41 @@ class _RecognitionReviewScreenState extends State<RecognitionReviewScreen> {
               if (v != null) setState(() => onChanged(v));
             }
           : null,
+    );
+  }
+
+  void _openViewer(int index) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            _PhotoViewer(photos: widget.photos, initialIndex: index),
+      ),
+    );
+  }
+
+  Widget _buildPhotoStrip() {
+    return SizedBox(
+      height: 72,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        itemCount: widget.photos.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (_, i) => GestureDetector(
+          onTap: () => _openViewer(i),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.file(
+              File(widget.photos[i].path),
+              width: 72,
+              height: 72,
+              fit: BoxFit.cover,
+              cacheWidth: 200,
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -224,9 +269,19 @@ class _RecognitionReviewScreenState extends State<RecognitionReviewScreen> {
                   const SizedBox(width: 8),
                   _dropdown(d.unit, _units, enabled, (v) => d.unit = v),
                   const Spacer(),
-                  _dropdown(d.category, _categories, enabled, (v) => d.category = v),
+                  _dropdown(
+                    d.category,
+                    _categories,
+                    enabled,
+                    (v) => d.category = v,
+                  ),
                   const SizedBox(width: 12),
-                  _dropdown(d.storage, _storages, enabled, (v) => d.storage = v),
+                  _dropdown(
+                    d.storage,
+                    _storages,
+                    enabled,
+                    (v) => d.storage = v,
+                  ),
                 ],
               ),
             ),
@@ -269,6 +324,10 @@ class _RecognitionReviewScreenState extends State<RecognitionReviewScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
         children: [
+          if (widget.photos.isNotEmpty) ...[
+            _buildPhotoStrip(),
+            const SizedBox(height: 8),
+          ],
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
             child: Text(
@@ -293,6 +352,59 @@ class _RecognitionReviewScreenState extends State<RecognitionReviewScreen> {
             child: ElevatedButton(
               onPressed: _selectedCount == 0 ? null : _submit,
               child: Text('$_selectedCount개 등록'),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 사진 크게 보기: 두 손가락 확대, 옆으로 넘기기
+class _PhotoViewer extends StatefulWidget {
+  final List<XFile> photos;
+  final int initialIndex;
+
+  const _PhotoViewer({required this.photos, required this.initialIndex});
+
+  @override
+  State<_PhotoViewer> createState() => _PhotoViewerState();
+}
+
+class _PhotoViewerState extends State<_PhotoViewer> {
+  late final PageController _pageController =
+      PageController(initialPage: widget.initialIndex);
+  late int _index = widget.initialIndex;
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        // 앱 전체 AppBar가 투명이라 여기선 직접 지정
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: widget.photos.length > 1
+            ? Text('${_index + 1} / ${widget.photos.length}')
+            : null,
+      ),
+      body: PageView.builder(
+        controller: _pageController,
+        itemCount: widget.photos.length,
+        onPageChanged: (i) => setState(() => _index = i),
+        itemBuilder: (_, i) => InteractiveViewer(
+          minScale: 1,
+          maxScale: 5,
+          child: Center(
+            child: Image.file(
+              File(widget.photos[i].path),
+              fit: BoxFit.contain,
             ),
           ),
         ),

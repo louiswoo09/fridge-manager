@@ -38,7 +38,7 @@ async def _generate_with_model(
     *,
     json_mode: bool = False,
     timeout: float = 30,
-    image: tuple[str, str] | None = None,
+    images: list[tuple[str, str]] | None = None,
     thinking_level: str | None = None,
 ) -> str:
     """지정한 모델 하나로 호출 (5xx/429면 RETRY_DELAYS만큼 재시도)"""
@@ -46,8 +46,7 @@ async def _generate_with_model(
         raise GeminiError(None, "GEMINI_API_KEY가 .env에 설정되지 않았습니다")
 
     parts: list[dict] = []
-    if image:
-        mime_type, data = image
+    for mime_type, data in images or []:
         parts.append({"inline_data": {"mime_type": mime_type, "data": data}})
     parts.append({"text": prompt})
 
@@ -108,14 +107,14 @@ async def generate(
     *,
     json_mode: bool = False,
     timeout: float = 30,
-    image: tuple[str, str] | None = None,
+    images: list[tuple[str, str]] | None = None,
     thinking_level: str | None = None,
 ) -> str:
     """기본 모델로 시도하고, 혼잡(503)·사용량 초과(429)면 예비 모델로 한 번 더"""
     kwargs = dict(
         json_mode=json_mode,
         timeout=timeout,
-        image=image,
+        images=images,
         thinking_level=thinking_level,
     )
     try:

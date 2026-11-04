@@ -150,7 +150,14 @@ RECOGNIZE_PROMPT = """너는 식재료 인식 전문가야. 사진을 보고 냉
 [사진 종류 판단]
 - 식재료(채소, 과일, 고기, 해산물, 유제품, 가공식품 등)가 찍힌 사진이면 source_type은 "ingredients"
 - 마트나 시장 영수증이면 source_type은 "receipt"
-- 둘 다 아니면 source_type은 "none", items는 빈 배열
+- 식재료 사진과 영수증이 섞여 있으면 source_type은 "mixed"
+- 모두 관련 없는 사진이면 source_type은 "none", items는 빈 배열
+
+[여러 장인 경우]
+- 사진이 여러 장이면 모든 사진을 함께 보고 하나의 목록으로 합칠 것.
+- 여러 사진에 동일한 재료가 각도만 바뀐채 찍혀있다고 판단되면 해당 재료의 개수는 그 재료가 가장 많이 보이는 사진 한 장 기준으로 셀 것.
+- 영수증이 여러 장이면 모든 영수증의 품목을 합칠 것. 같은 영수증을 나눠 찍어서 같은 줄이 두 번 보이면 한 번만 셀 것.
+- 식재료와 관련 없는 사진이 섞여 있으면 그 사진은 무시할 것.
 
 [식재료 사진 규칙]
 1. 사진에서 확실히 보이는 식재료만 작성할 것. 보이지 않는 재료를 추측해서 만들지 말 것.
@@ -214,7 +221,7 @@ def parse_recognition(text: str) -> dict:
         return {"source_type": "none", "items": []}
 
     source = data.get("source_type")
-    if source not in ("ingredients", "receipt", "none"):
+    if source not in ("ingredients", "receipt", "mixed", "none"):
         source = "none"
 
     raw_items = data.get("items")
@@ -256,3 +263,4 @@ def parse_recognition(text: str) -> dict:
             }
 
     return {"source_type": source, "items": list(merged.values())}
+

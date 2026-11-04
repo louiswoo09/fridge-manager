@@ -54,6 +54,18 @@ class IngredientRecognitionService {
     );
   }
 
+  /// 앨범에서 여러 장 고르기
+  /// limit은 지원하는 선택 화면에서만 지켜지므로, 받는 쪽에서 장수를 다시 잘라야 함
+  static Future<List<XFile>> pickMultiImage({int? limit}) {
+    return _picker.pickMultiImage(
+      maxWidth: 1280,
+      maxHeight: 1280,
+      imageQuality: 85,
+      // limit은 2 이상만 허용돼서, 1이면 넘기지 않고 받은 뒤 자름
+      limit: (limit != null && limit >= 2) ? limit : null,
+    );
+  }
+
   static String _mimeTypeOf(XFile file) {
     final ext = file.path.split('.').last.toLowerCase();
     return switch (ext) {
@@ -63,17 +75,17 @@ class IngredientRecognitionService {
     };
   }
 
-  static Future<RecognitionResult> recognize(XFile file) async {
-    final bytes = await file.readAsBytes();
+  static Future<RecognitionResult> recognize(List<XFile> files) async {
+    final images = <Map<String, String>>[];
+    for (final file in files) {
+      final bytes = await file.readAsBytes();
+      images.add({'data': base64Encode(bytes), 'mime_type': _mimeTypeOf(file)});
+    }
 
     final response = await ApiClient.post(
       '/ai/recognize-ingredients',
-      jsonEncode({
-        'image_base64': base64Encode(bytes),
-        'mime_type': _mimeTypeOf(file),
-      }),
-      // 서버 Gemini 대기(90초) + 재시도 여유
-      timeout: const Duration(seconds: 120),
+      jsonEncode({'images': images}),
+      timeout: const Duration(seconds: 150),
     );
 
     if (response.statusCode == 503) throw AiBusyException();
@@ -81,7 +93,8 @@ class IngredientRecognitionService {
       throw Exception('인식 실패 (코드 ${response.statusCode})');
     }
 
-    final data = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+    final data =
+        jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
     final items = ((data['items'] as List?) ?? [])
         .whereType<Map<String, dynamic>>()
         .map(RecognizedIngredient.fromJson)
