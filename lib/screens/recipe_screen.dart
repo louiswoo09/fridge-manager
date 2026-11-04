@@ -105,7 +105,7 @@ class RecipeScreenState extends State<RecipeScreen> {
         final source = _fridgeFilter == FridgeFilter.imminent
             ? _imminentIngredients
             : _notExpiredItems;
-        return source.map((e) => e.name).toList();
+        return source.map((e) => e.name.trim()).toSet().toList();
       case RecipeMode.search:
       case RecipeMode.free:
         return const [];

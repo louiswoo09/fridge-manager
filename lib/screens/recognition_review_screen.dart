@@ -340,7 +340,7 @@ class _RecognitionReviewScreenState extends State<RecognitionReviewScreen> {
           TextButton.icon(
             onPressed: _addEmpty,
             icon: const Icon(Icons.add),
-            label: const Text('빠진 재료 직접 추가'),
+            label: const Text('재료 직접 입력'),
           ),
         ],
       ),

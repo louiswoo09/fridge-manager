@@ -51,6 +51,14 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
     }
   }
 
+  /// 이름 끝 글자에 받침이 있으면 '을', 없으면 '를'
+  String _objectParticle(String word) {
+    if (word.isEmpty) return '를';
+    final code = word.codeUnitAt(word.length - 1);
+    if (code < 0xAC00 || code > 0xD7A3) return '를';
+    return (code - 0xAC00) % 28 == 0 ? '를' : '을';
+  }
+
   Future<void> _save() async {
     if (_nameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(
@@ -79,8 +87,21 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
     );
 
     try {
-      await IngredientService().addIngredient(ingredient);
-      if (mounted) Navigator.pop(context, _nameController.text.trim());
+      final merged = await IngredientService().addIngredient(ingredient);
+      if (!mounted) return;
+
+      final name = _nameController.text.trim();
+      final messenger = ScaffoldMessenger.of(context);
+      Navigator.pop(context, name);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            merged
+                ? '$name${_objectParticle(name)} 동일한 재료와 합쳤어요'
+                : '$name${_objectParticle(name)} 등록했어요',
+          ),
+        ),
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(

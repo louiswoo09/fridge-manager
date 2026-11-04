@@ -30,6 +30,11 @@ class IngredientListScreen extends StatefulWidget {
 }
 
 class _IngredientListScreenState extends State<IngredientListScreen> {
+  // 직접 추가 화면과 같은 선택지
+  static const _categories = ['채소', '육류', '유제품', '과일', '해산물', '기타'];
+  static const _units = ['개', 'g', 'ml', 'L', '팩'];
+  static const _storages = ['냉장', '냉동', '실온'];
+
   final IngredientService _service = IngredientService();
   final FridgeService _fridgeService = FridgeService();
   StreamSubscription<List<Ingredient>>? _subscription;
@@ -56,6 +61,8 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
   String _searchQuery = '';
 
   final TextEditingController _searchController = TextEditingController();
+
+  // ───────────────────────── 목록 계산 ─────────────────────────
 
   List<Ingredient> get _filteredItems {
     return _items.where((item) {
@@ -116,6 +123,17 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
       _selectedStorage != '전체' ||
       _selectedExpiry != null;
 
+  /// 이름이 같은 재료끼리 묶음 (목록 순서 유지 → 소비기한 순)
+  List<List<Ingredient>> _groupByName(List<Ingredient> items) {
+    final groups = <String, List<Ingredient>>{};
+    for (final item in items) {
+      groups.putIfAbsent(item.name.trim(), () => []).add(item);
+    }
+    return groups.values.toList();
+  }
+
+  // ───────────────────────── 생명주기 ─────────────────────────
+
   @override
   void initState() {
     super.initState();
@@ -134,7 +152,6 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
     CartService().invalidateCache();
     _analysisService.invalidateCache();
     GeminiCacheService().clear();
-    FridgeAnalysisService().invalidateCache();
 
     // 활성 냉장고 이름 가져오기
     final fridgeDoc = await FirebaseFirestore.instance
@@ -196,6 +213,539 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
     super.dispose();
   }
 
+  // ───────────────────────── 공통 도우미 ─────────────────────────
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  String _formatDate(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  String _dDayText(DateTime expiration, DateTime now) {
+    final today = DateTime(now.year, now.month, now.day);
+    final expiry = DateTime(expiration.year, expiration.month, expiration.day);
+    final days = expiry.difference(today).inDays;
+    if (days < 0) return '${days.abs()}일 지남';
+    if (days == 0) return 'D-Day';
+    return 'D-$days';
+  }
+
+  Color _getExpiryColor(DateTime expiry, DateTime now) {
+    final today = DateTime(now.year, now.month, now.day);
+    final expiryDate = DateTime(expiry.year, expiry.month, expiry.day);
+    final days = expiryDate.difference(today).inDays;
+    if (days < 0) return Colors.grey;
+    if (days <= 3) return Colors.red;
+    if (days <= 7) return Colors.orange;
+    return Colors.green;
+  }
+
+  Widget _detailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(color: Colors.grey)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+
+  Widget _ingredientAvatar(Ingredient item, {double radius = 24}) =>
+      CircleAvatar(
+        backgroundColor: Colors.grey[200],
+        radius: radius,
+        child: IngredientIconMapper.build(
+          name: item.name,
+          category: item.category,
+          size: radius,
+        ),
+      );
+
+  Widget _deleteBackground() => Container(
+    alignment: Alignment.centerRight,
+    padding: const EdgeInsets.only(right: 20),
+    color: Colors.red[400],
+    child: const Icon(Icons.delete, color: Colors.white),
+  );
+
+  /// 카드를 펼치거나 접을 때 열려 있던 메뉴 닫기
+  void _closeMenuAfterFrame() {
+    if (!_isMenuOpen) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _isMenuOpen = false);
+    });
+  }
+
+  void _openEdit(Ingredient item) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => EditIngredientScreen(ingredient: item)),
+    );
+  }
+
+  /// 밀어서 삭제할 때 확인 → 휴지통으로
+  Future<bool> _confirmAndSoftDelete(Ingredient item) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('삭제 확인'),
+        content: Text('${item.name}을(를) 삭제할까요?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('삭제', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return false;
+
+    try {
+      await _service.softDeleteIngredient(item.id);
+      _snack('${item.name} 삭제됨');
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // ───────────────────────── 창 안에서 쓰는 위젯 ─────────────────────────
+
+  Widget _dialogDropdown(
+    String label,
+    String value,
+    List<String> options,
+    ValueChanged<String> onChanged,
+  ) {
+    return Row(
+      children: [
+        Text(label),
+        const Spacer(),
+        DropdownButton<String>(
+          value: options.contains(value) ? value : options.first,
+          items: options
+              .map((o) => DropdownMenuItem(value: o, child: Text(o)))
+              .toList(),
+          onChanged: (v) {
+            if (v != null) onChanged(v);
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _dialogDateRow(
+    BuildContext ctx,
+    DateTime value,
+    ValueChanged<DateTime> onPicked,
+  ) {
+    return Row(
+      children: [
+        const Text('소비기한'),
+        const Spacer(),
+        TextButton.icon(
+          onPressed: () async {
+            final picked = await showDatePicker(
+              context: ctx,
+              initialDate: value,
+              firstDate: DateTime(2000),
+              lastDate: DateTime.now().add(const Duration(days: 365 * 3)),
+            );
+            if (picked != null) onPicked(picked);
+          },
+          icon: const Icon(Icons.event, size: 18),
+          label: Text(_formatDate(value)),
+        ),
+      ],
+    );
+  }
+
+  // ───────────────────────── 합치기 · 나누기 ─────────────────────────
+
+  /// 묶음 안에서 재료 고르기
+  /// multiple: true → 합치기용 (2건 이상), false → 나누기용 (1건, 누르면 바로 선택)
+  Future<List<Ingredient>?> _pickLots(
+    List<Ingredient> lots, {
+    required bool multiple,
+  }) {
+    final selected = <String>{};
+    final now = DateTime.now();
+
+    return showDialog<List<Ingredient>>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialog) {
+          void toggle(String id) => setDialog(() {
+            if (selected.contains(id)) {
+              selected.remove(id);
+            } else {
+              selected.add(id);
+            }
+          });
+
+          return AlertDialog(
+            title: Text(multiple ? '합칠 재료 선택' : '나눌 재료 선택'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: ListView(
+                shrinkWrap: true,
+                children: lots.map((item) {
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: _ingredientAvatar(item, radius: 16),
+                    title: Text(
+                      '${item.quantity}${item.unit} · ${item.storage}',
+                    ),
+                    subtitle: Text(
+                      '${_formatDate(item.expirationDate)}  ${_dDayText(item.expirationDate, now)}',
+                    ),
+                    trailing: multiple
+                        ? Checkbox(
+                            value: selected.contains(item.id),
+                            onChanged: (_) => toggle(item.id),
+                          )
+                        : const Icon(Icons.chevron_right),
+                    onTap: () {
+                      if (!multiple) {
+                        Navigator.pop(ctx, [item]);
+                        return;
+                      }
+                      toggle(item.id);
+                    },
+                  );
+                }).toList(),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('취소'),
+              ),
+              if (multiple)
+                TextButton(
+                  onPressed: selected.length < 2
+                      ? null
+                      : () => Navigator.pop(
+                          ctx,
+                          lots.where((e) => selected.contains(e.id)).toList(),
+                        ),
+                  child: Text(
+                    selected.length < 2
+                        ? '2건 이상 골라주세요'
+                        : '다음 (${selected.length}건)',
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// 나누기: 수량·단위·보관 방법·소비기한을 정해서 일부를 떼어냄
+  Future<void> _openSplit(Ingredient item) async {
+    var qtyText = '${item.quantity ~/ 2 > 0 ? item.quantity ~/ 2 : 1}';
+    var remainText = '';
+    var unit = item.unit;
+    var remainUnit = item.unit;
+    var storage = item.storage;
+    var expiration = item.expirationDate;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialog) => AlertDialog(
+          title: Text('${item.name} 나누기'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${item.quantity}${item.unit} 중 일부를 따로 보관해요',
+                  style: const TextStyle(color: Colors.grey, fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        initialValue: qtyText,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: '나눌 수량',
+                          isDense: true,
+                        ),
+                        onChanged: (v) => qtyText = v,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    DropdownButton<String>(
+                      value: _units.contains(unit) ? unit : _units.first,
+                      items: _units
+                          .map(
+                            (u) => DropdownMenuItem(value: u, child: Text(u)),
+                          )
+                          .toList(),
+                      onChanged: (v) {
+                        if (v != null) setDialog(() => unit = v);
+                      },
+                    ),
+                  ],
+                ),
+                // 단위를 바꾸면 원래 재료가 얼마 남는지 계산할 수 없어서 직접 입력
+                if (unit != item.unit) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          initialValue: remainText,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: '원래 재료에 남는 수량',
+                            helperText: '단위가 달라서 남는 양을 직접 입력해주세요',
+                            isDense: true,
+                          ),
+                          onChanged: (v) => remainText = v,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      DropdownButton<String>(
+                        value: remainUnit,
+                        items: _units
+                            .map(
+                              (u) => DropdownMenuItem(value: u, child: Text(u)),
+                            )
+                            .toList(),
+                        onChanged: (v) {
+                          if (v != null) setDialog(() => remainUnit = v);
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 12),
+                _dialogDropdown(
+                  '보관 방법',
+                  storage,
+                  _storages,
+                  (v) => setDialog(() => storage = v),
+                ),
+                _dialogDateRow(
+                  ctx,
+                  expiration,
+                  (d) => setDialog(() => expiration = d),
+                ),
+                const Text(
+                  '냉동 보관하면 소비기한을 늘려주세요',
+                  style: TextStyle(color: Colors.grey, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('취소'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('나누기'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    final qty = int.tryParse(qtyText.trim()) ?? 0;
+    if (qty <= 0) {
+      _snack('나눌 수량을 입력해주세요');
+      return;
+    }
+
+    final int remaining;
+    final String finalRemainUnit;
+    if (unit == item.unit) {
+      remaining = item.quantity - qty;
+      finalRemainUnit = item.unit; // 단위가 같으면 원래 단위 그대로
+      if (remaining <= 0) {
+        _snack('나눌 수량은 ${item.quantity}${item.unit}보다 적어야 해요');
+        return;
+      }
+    } else {
+      remaining = int.tryParse(remainText.trim()) ?? 0;
+      finalRemainUnit = remainUnit;
+      if (remaining <= 0) {
+        _snack('원래 재료에 남는 수량을 입력해주세요');
+        return;
+      }
+    }
+
+    try {
+      await _service.splitIngredient(
+        item,
+        remainingQuantity: remaining,
+        remainingUnit: finalRemainUnit,
+        quantity: qty,
+        unit: unit,
+        storage: storage,
+        expirationDate: expiration,
+      );
+      _snack('$qty$unit를 나눠서 $storage 보관했어요');
+    } catch (e) {
+      _snack('나누기 실패: $e');
+    }
+  }
+
+  /// 합치기: 고른 재료들을 하나로, 결과(수량·단위·카테고리·보관·소비기한)는 직접 정함
+  Future<void> _openMerge(List<Ingredient> picked) async {
+    // 가장 임박한 건을 남기고 나머지를 합침
+    final sorted = [...picked]
+      ..sort((a, b) => a.expirationDate.compareTo(b.expirationDate));
+    final target = sorted.first;
+    final sameUnit = picked.map((e) => e.unit).toSet().length == 1;
+
+    var qtyText = sameUnit
+        ? '${picked.fold<int>(0, (s, e) => s + e.quantity)}'
+        : '';
+    var unit = target.unit;
+    var category = target.category;
+    var storage = target.storage;
+    var expiration = target.expirationDate; // 가장 짧은 소비기한
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialog) => AlertDialog(
+          title: Text('${target.name.trim()} 합치기'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '합칠 재료',
+                  style: TextStyle(color: Colors.grey, fontSize: 12),
+                ),
+                const SizedBox(height: 4),
+                ...sorted.map(
+                  (e) => Text(
+                    '• ${e.quantity}${e.unit} · ${e.storage} · ${_formatDate(e.expirationDate)}',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+                const Divider(height: 24),
+                const Text(
+                  '합친 결과',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        initialValue: qtyText,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText: '수량',
+                          helperText: sameUnit ? null : '단위가 달라서 직접 입력해주세요',
+                          isDense: true,
+                        ),
+                        onChanged: (v) => qtyText = v,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    DropdownButton<String>(
+                      value: _units.contains(unit) ? unit : _units.first,
+                      items: _units
+                          .map(
+                            (u) => DropdownMenuItem(value: u, child: Text(u)),
+                          )
+                          .toList(),
+                      onChanged: (v) {
+                        if (v != null) setDialog(() => unit = v);
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                _dialogDropdown(
+                  '카테고리',
+                  category,
+                  _categories,
+                  (v) => setDialog(() => category = v),
+                ),
+                _dialogDropdown(
+                  '보관 방법',
+                  storage,
+                  _storages,
+                  (v) => setDialog(() => storage = v),
+                ),
+                _dialogDateRow(
+                  ctx,
+                  expiration,
+                  (d) => setDialog(() => expiration = d),
+                ),
+                const Text(
+                  '소비기한은 가장 짧은 날짜로 채워져 있어요',
+                  style: TextStyle(color: Colors.grey, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('취소'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('합치기'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    final qty = int.tryParse(qtyText.trim()) ?? 0;
+    if (qty <= 0) {
+      _snack('합친 수량을 입력해주세요');
+      return;
+    }
+
+    final others = picked.where((e) => e.id != target.id).toList();
+    final result = target.copyWith(
+      quantity: qty,
+      unit: unit,
+      category: category,
+      storage: storage,
+      expirationDate: expiration,
+    );
+
+    try {
+      await _service.mergeIngredients(target, others, result);
+      _snack('${picked.length}건을 하나로 합쳤어요');
+    } catch (e) {
+      _snack('합치기 실패: $e');
+    }
+  }
+
+  // ───────────────────────── 필터 ─────────────────────────
+
   void _showFilterSheet() {
     String tempCategory = _selectedCategory;
     String tempStorage = _selectedStorage;
@@ -252,7 +802,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
-                    children: ['전체', '채소', '육류', '유제품', '과일', '해산물', '기타']
+                    children: ['전체', ..._categories]
                         .map(
                           (c) => FilterChip(
                             label: Text(c),
@@ -273,7 +823,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
-                    children: ['전체', '냉장', '냉동', '실온']
+                    children: ['전체', ..._storages]
                         .map(
                           (s) => FilterChip(
                             label: Text(s),
@@ -344,28 +894,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
     );
   }
 
-  Color _getExpiryColor(DateTime expiry, DateTime now) {
-    final today = DateTime(now.year, now.month, now.day);
-    final expiryDate = DateTime(expiry.year, expiry.month, expiry.day);
-    final days = expiryDate.difference(today).inDays;
-    if (days < 0) return Colors.grey;
-    if (days <= 3) return Colors.red;
-    if (days <= 7) return Colors.orange;
-    return Colors.green;
-  }
-
-  Widget _detailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: const TextStyle(color: Colors.grey)),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
-        ],
-      ),
-    );
-  }
+  // ───────────────────────── 분석 카드 ─────────────────────────
 
   Future<void> _fetchAnalysis({bool forceRefresh = false}) async {
     if (_items.isEmpty) {
@@ -427,6 +956,8 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
       if (mounted) setState(() => _isAnalyzing = false);
     }
   }
+
+  // ───────────────────────── 사진으로 추가 ─────────────────────────
 
   Future<void> _startPhotoRecognition() async {
     setState(() => _isMenuOpen = false);
@@ -490,28 +1021,33 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
       );
       if (ingredients == null || ingredients.isEmpty || !mounted) return;
 
-      // 일괄 등록
+      // 일괄 등록 (똑같은 재료가 있으면 수량 합치기)
       try {
-        await _service.addMany(ingredients);
+        final merged = await _service.addMany(ingredients);
+        final added = ingredients.length - merged;
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${ingredients.length}개 재료를 등록했어요')),
-        );
-      } catch (e) {
-        if (!mounted) return;
+
+        final message = merged == 0
+            ? '$added개 재료를 등록했어요'
+            : added == 0
+            ? '$merged개 재료를 동일한 재료와 합쳤어요'
+            : '$added개 재료를 등록하고 $merged개는 동일한 재료와 합쳤어요';
+
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('등록 중 오류: $e')));
+        ).showSnackBar(SnackBar(content: Text(message)));
+      } catch (e) {
+        _snack('등록 중 오류: $e');
       }
     } catch (e) {
       debugPrint('식재료 인식 실패: $e');
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop(); // 안내 닫기
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(friendlyError(e, fallback: '식재료 인식에 실패했어요'))),
-      );
+      _snack(friendlyError(e, fallback: '식재료 인식에 실패했어요'));
     }
   }
+
+  // ───────────────────────── 삭제 모드 ─────────────────────────
 
   Future<void> _deleteSelected() async {
     if (_selectedIds.isEmpty) return;
@@ -541,24 +1077,18 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
 
     try {
       await _service.softDeleteMany(deletedIds);
-
       if (!mounted) return;
-
       setState(() {
         _selectedIds.clear();
         _isDeleteMode = false;
       });
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('$deletedCount개 삭제됨')));
+      _snack('$deletedCount개 삭제됨');
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('삭제 중 오류: $e')));
+      _snack('삭제 중 오류: $e');
     }
   }
+
+  // ───────────────────────── 화면 ─────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -703,7 +1233,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
     );
   }
 
-  /// 메뉴 버튼 (아이콘 세로 정렬 + 글자 왼쪽 정렬)
+  /// 메뉴 버튼 (아이콘 왼쪽 + 글자 가운데 정렬로 크기 통일)
   Widget _menuButton({
     required String heroTag,
     required IconData icon,
@@ -747,11 +1277,11 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
       );
     }
     if (_isAnalyzing && _analysis == null) {
-      return Card(
+      return const Card(
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.all(16),
           child: Row(
-            children: const [
+            children: [
               SizedBox(
                 width: 16,
                 height: 16,
@@ -798,9 +1328,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
               onTap: () =>
                   setState(() => _isAnalysisExpanded = !_isAnalysisExpanded),
               child: Padding(
-                padding: EdgeInsets.symmetric(
-                  vertical: _isAnalysisExpanded ? 4 : 4,
-                ),
+                padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
@@ -835,7 +1363,6 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
               const SizedBox(height: 8),
               Stack(
                 children: [
-                  // 메인 내용
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -882,7 +1409,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
                 ],
               ),
               const SizedBox(height: 8),
-              // 클릭 가능한 "레시피 검색" 부분만 InkWell로 감쌈
+              // "레시피 검색" 부분만 누를 수 있게
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(
@@ -969,6 +1496,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
 
     final now = DateTime.now();
     final filtered = _filteredItems;
+    final groups = _groupByName(filtered);
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -994,218 +1522,342 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
                     ),
                   )
                 : ListView.builder(
-                    itemCount: filtered.length,
+                    itemCount: groups.length,
                     itemBuilder: (context, index) {
-                      final item = filtered[index];
-
-                      final date = item.expirationDate;
-                      final formattedDate =
-                          "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
-
-                      final today = DateTime(now.year, now.month, now.day);
-                      final expiry = DateTime(
-                        item.expirationDate.year,
-                        item.expirationDate.month,
-                        item.expirationDate.day,
-                      );
-                      final days = expiry.difference(today).inDays;
-                      final dDay = days < 0
-                          ? '${days.abs()}일 지남'
-                          : days == 0
-                          ? 'D-Day'
-                          : 'D-$days';
-
-                      final isSelected = _selectedIds.contains(item.id);
-
+                      final lots = groups[index];
                       if (_isDeleteMode) {
-                        return Card(
-                          key: ValueKey(item.id),
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          color: isSelected ? Colors.red[50] : null,
-                          child: CheckboxListTile(
-                            value: isSelected,
-                            onChanged: (checked) {
-                              setState(() {
-                                if (checked == true) {
-                                  _selectedIds.add(item.id);
-                                } else {
-                                  _selectedIds.remove(item.id);
-                                }
-                              });
-                            },
-                            secondary: CircleAvatar(
-                              backgroundColor: Colors.grey[200],
-                              radius: 24,
-                              child: IngredientIconMapper.build(
-                                name: item.name,
-                                category: item.category,
-                                size: 24,
-                              ),
-                            ),
-                            title: Text(
-                              '${item.name} (${item.storage})',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            subtitle: Text(
-                              dDay,
-                              style: TextStyle(
-                                color: _getExpiryColor(
-                                  item.expirationDate,
-                                  now,
-                                ),
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        );
+                        return lots.length == 1
+                            ? _buildDeleteModeCard(lots.first, now)
+                            : _buildDeleteModeGroupCard(lots, now);
                       }
-
-                      return Dismissible(
-                        key: ValueKey(item.id),
-                        direction: DismissDirection.endToStart,
-                        background: Container(
-                          alignment: Alignment.centerRight,
-                          padding: const EdgeInsets.only(right: 20),
-                          color: Colors.red[400],
-                          child: const Icon(Icons.delete, color: Colors.white),
-                        ),
-                        confirmDismiss: (direction) async {
-                          final confirm = await showDialog<bool>(
-                            context: context,
-                            builder: (context) => AlertDialog(
-                              title: const Text('삭제 확인'),
-                              content: Text('${item.name}을(를) 삭제할까요?'),
-                              actions: [
-                                TextButton(
-                                  onPressed: () =>
-                                      Navigator.pop(context, false),
-                                  child: const Text('취소'),
-                                ),
-                                TextButton(
-                                  onPressed: () => Navigator.pop(context, true),
-                                  child: const Text(
-                                    '삭제',
-                                    style: TextStyle(color: Colors.red),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-
-                          if (confirm != true) return false;
-
-                          try {
-                            await _service.softDeleteIngredient(item.id);
-
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('${item.name} 삭제됨')),
-                              );
-                            }
-                            return true;
-                          } catch (e) {
-                            return false;
-                          }
-                        },
-                        onDismissed: (_) {},
-                        child: Card(
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          child: ExpansionTile(
-                            key: PageStorageKey(item.id),
-                            onExpansionChanged: (isExpanded) {
-                              if (_isMenuOpen) {
-                                WidgetsBinding.instance.addPostFrameCallback((
-                                  _,
-                                ) {
-                                  if (mounted) {
-                                    setState(() => _isMenuOpen = false);
-                                  }
-                                });
-                              }
-                            },
-                            collapsedShape: const Border(),
-                            shape: const Border(),
-                            leading: CircleAvatar(
-                              backgroundColor: Colors.grey[200],
-                              radius: 24,
-                              child: IngredientIconMapper.build(
-                                name: item.name,
-                                category: item.category,
-                                size: 24,
-                              ),
-                            ),
-                            title: Text(
-                              '${item.name} (${item.storage})',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            subtitle: Text(
-                              dDay,
-                              style: TextStyle(
-                                color: _getExpiryColor(
-                                  item.expirationDate,
-                                  now,
-                                ),
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            trailing: Text(
-                              '${item.quantity}${item.unit}',
-                              style: const TextStyle(fontSize: 16),
-                            ),
-                            children: [
-                              const Divider(height: 1),
-                              const SizedBox(height: 8),
-                              _detailRow('카테고리', item.category),
-                              _detailRow('수량', '${item.quantity}${item.unit}'),
-                              _detailRow('보관 방법', item.storage),
-                              _detailRow('소비기한', formattedDate),
-                              _detailRow(
-                                '등록일',
-                                "${item.addedAt.year}-${item.addedAt.month.toString().padLeft(2, '0')}-${item.addedAt.day.toString().padLeft(2, '0')}",
-                              ),
-                              const SizedBox(height: 8),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 4,
-                                ),
-                                child: SizedBox(
-                                  width: double.infinity,
-                                  child: OutlinedButton(
-                                    style: OutlinedButton.styleFrom(
-                                      side: const BorderSide(width: 0.3),
-                                    ),
-                                    onPressed: () => Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) =>
-                                            EditIngredientScreen(
-                                              ingredient: item,
-                                            ),
-                                      ),
-                                    ),
-                                    child: const Text('수정'),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                            ],
-                          ),
-                        ),
-                      );
+                      return lots.length == 1
+                          ? _buildSingleItemCard(lots.first, now)
+                          : _buildGroupCard(lots, now);
                     },
                   ),
           ),
+        ],
+      ),
+    );
+  }
+
+  // ───────────────────────── 카드: 일반 모드 ─────────────────────────
+
+  /// 상세보기 아래 버튼들 (묶음 안 건은 나누기가 위쪽 버튼에 있어서 수정만)
+  Widget _detailActions(Ingredient item, {bool showSplit = true}) {
+    final buttonStyle = OutlinedButton.styleFrom(
+      side: const BorderSide(width: 0.3),
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton(
+              style: buttonStyle,
+              onPressed: () => _openEdit(item),
+              child: const Text('수정'),
+            ),
+          ),
+          if (showSplit) ...[
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton(
+                style: buttonStyle,
+                onPressed: () => _openSplit(item),
+                child: const Text('나누기'),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// 1건짜리 재료 카드 (기존 모양)
+  Widget _buildSingleItemCard(Ingredient item, DateTime now) {
+    return Dismissible(
+      key: ValueKey(item.id),
+      direction: DismissDirection.endToStart,
+      background: _deleteBackground(),
+      confirmDismiss: (_) => _confirmAndSoftDelete(item),
+      child: Card(
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: ExpansionTile(
+          key: PageStorageKey(item.id),
+          onExpansionChanged: (_) => _closeMenuAfterFrame(),
+          collapsedShape: const Border(),
+          shape: const Border(),
+          leading: _ingredientAvatar(item),
+          title: Text(
+            '${item.name} (${item.storage})',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          subtitle: Text(
+            _dDayText(item.expirationDate, now),
+            style: TextStyle(
+              color: _getExpiryColor(item.expirationDate, now),
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          trailing: Text(
+            '${item.quantity}${item.unit}',
+            style: const TextStyle(fontSize: 16),
+          ),
+          children: [
+            const Divider(height: 1),
+            const SizedBox(height: 8),
+            _detailRow('카테고리', item.category),
+            _detailRow('수량', '${item.quantity}${item.unit}'),
+            _detailRow('보관 방법', item.storage),
+            _detailRow('소비기한', _formatDate(item.expirationDate)),
+            _detailRow('등록일', _formatDate(item.addedAt)),
+            const SizedBox(height: 8),
+            _detailActions(item),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 같은 이름 2건 이상 묶음 카드
+  Widget _buildGroupCard(List<Ingredient> lots, DateTime now) {
+    final first = lots.first; // 가장 임박한 것
+    final name = first.name.trim();
+
+    // 단위가 다 같으면 합계, 다르면 건수
+    final units = lots.map((e) => e.unit).toSet();
+    final summary = units.length == 1
+        ? '${lots.fold<int>(0, (total, e) => total + e.quantity)}${first.unit}'
+        : '${lots.length}건';
+
+    // 보관 방법이 다 같으면 제목에 표시
+    final storages = lots.map((e) => e.storage).toSet();
+    final title = storages.length == 1 ? '$name (${first.storage})' : name;
+
+    final buttonStyle = OutlinedButton.styleFrom(
+      side: const BorderSide(width: 0.3),
+    );
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        key: PageStorageKey('group_$name'),
+        onExpansionChanged: (_) => _closeMenuAfterFrame(),
+        collapsedShape: const Border(),
+        shape: const Border(),
+        leading: _ingredientAvatar(first),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(
+                text: _dDayText(first.expirationDate, now),
+                style: TextStyle(
+                  color: _getExpiryColor(first.expirationDate, now),
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              TextSpan(
+                text: ' · ${lots.length}건',
+                style: const TextStyle(color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
+        trailing: Text(summary, style: const TextStyle(fontSize: 16)),
+        children: [
+          const Divider(height: 1),
+          // 묶음 단위 합치기 · 나누기
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: buttonStyle,
+                    onPressed: () async {
+                      final picked = await _pickLots(lots, multiple: true);
+                      if (picked == null || picked.length < 2 || !mounted) {
+                        return;
+                      }
+                      _openMerge(picked);
+                    },
+                    icon: const Icon(Icons.merge_type, size: 18),
+                    label: const Text('합치기'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: buttonStyle,
+                    onPressed: () async {
+                      final picked = await _pickLots(lots, multiple: false);
+                      if (picked == null || picked.isEmpty || !mounted) return;
+                      _openSplit(picked.first);
+                    },
+                    icon: const Icon(Icons.call_split, size: 18),
+                    label: const Text('나누기'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ...lots.map((item) => _buildLotTile(item, now)),
+          const SizedBox(height: 4),
+        ],
+      ),
+    );
+  }
+
+  /// 묶음 안의 한 건: 기존 카드와 같은 배치, 누르면 상세보기
+  Widget _buildLotTile(Ingredient item, DateTime now) {
+    return Dismissible(
+      key: ValueKey(item.id),
+      direction: DismissDirection.endToStart,
+      background: _deleteBackground(),
+      confirmDismiss: (_) => _confirmAndSoftDelete(item),
+      child: ExpansionTile(
+        key: PageStorageKey('lot_${item.id}'),
+        tilePadding: const EdgeInsets.only(left: 24, right: 16),
+        collapsedShape: const Border(),
+        shape: const Border(),
+        leading: _ingredientAvatar(item, radius: 18),
+        title: Text(
+          '${item.name} (${item.storage})',
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        subtitle: Text(
+          _dDayText(item.expirationDate, now),
+          style: TextStyle(
+            color: _getExpiryColor(item.expirationDate, now),
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        trailing: Text(
+          '${item.quantity}${item.unit}',
+          style: const TextStyle(fontSize: 15),
+        ),
+        children: [
+          const Divider(height: 1, indent: 24),
+          const SizedBox(height: 8),
+          _detailRow('카테고리', item.category),
+          _detailRow('수량', '${item.quantity}${item.unit}'),
+          _detailRow('보관 방법', item.storage),
+          _detailRow('소비기한', _formatDate(item.expirationDate)),
+          _detailRow('등록일', _formatDate(item.addedAt)),
+          const SizedBox(height: 4),
+          _detailActions(item, showSplit: false),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  // ───────────────────────── 카드: 삭제 모드 ─────────────────────────
+
+  Widget _buildDeleteModeCard(Ingredient item, DateTime now) {
+    final isSelected = _selectedIds.contains(item.id);
+    return Card(
+      key: ValueKey(item.id),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      color: isSelected ? Colors.red[50] : null,
+      child: CheckboxListTile(
+        value: isSelected,
+        onChanged: (checked) {
+          setState(() {
+            if (checked == true) {
+              _selectedIds.add(item.id);
+            } else {
+              _selectedIds.remove(item.id);
+            }
+          });
+        },
+        secondary: _ingredientAvatar(item),
+        title: Text(
+          '${item.name} (${item.storage})',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Text(
+          _dDayText(item.expirationDate, now),
+          style: TextStyle(
+            color: _getExpiryColor(item.expirationDate, now),
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDeleteModeGroupCard(List<Ingredient> lots, DateTime now) {
+    final first = lots.first;
+    final ids = lots.map((e) => e.id).toList();
+    final selectedCount = ids.where(_selectedIds.contains).length;
+    // 전부 선택 true / 하나도 없음 false / 일부 null(— 표시)
+    final bool? groupValue = selectedCount == 0
+        ? false
+        : selectedCount == ids.length
+        ? true
+        : null;
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      color: selectedCount > 0 ? Colors.red[50] : null,
+      child: Column(
+        children: [
+          CheckboxListTile(
+            tristate: true,
+            value: groupValue,
+            onChanged: (_) {
+              setState(() {
+                if (selectedCount == ids.length) {
+                  _selectedIds.removeAll(ids);
+                } else {
+                  _selectedIds.addAll(ids);
+                }
+              });
+            },
+            secondary: _ingredientAvatar(first),
+            title: Text(
+              first.name.trim(),
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle: Text(
+              '${lots.length}건 중 $selectedCount건 선택',
+              style: const TextStyle(color: Colors.grey),
+            ),
+          ),
+          const Divider(height: 1, indent: 16, endIndent: 16),
+          ...lots.map(
+            (item) => CheckboxListTile(
+              dense: true,
+              contentPadding: const EdgeInsets.only(left: 24, right: 16),
+              value: _selectedIds.contains(item.id),
+              onChanged: (checked) {
+                setState(() {
+                  if (checked == true) {
+                    _selectedIds.add(item.id);
+                  } else {
+                    _selectedIds.remove(item.id);
+                  }
+                });
+              },
+              secondary: _ingredientAvatar(item, radius: 18),
+              title: Text(
+                '${item.name} (${item.storage}) · ${item.quantity}${item.unit}',
+              ),
+              subtitle: Text(
+                _dDayText(item.expirationDate, now),
+                style: TextStyle(
+                  color: _getExpiryColor(item.expirationDate, now),
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
         ],
       ),
     );
