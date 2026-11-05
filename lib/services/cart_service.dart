@@ -175,4 +175,21 @@ class CartService {
     final key = _makeKey(productNo, productName);
     return keys.contains(key);
   }
+
+  /// 담긴 품목 한 번 읽기 (정리 제안용)
+  Future<List<Map<String, dynamic>>> getItems() async {
+    final ref = await _cartRef();
+    final snap = await ref.get();
+    return snap.docs.map((d) => {...d.data(), '_key': d.id}).toList();
+  }
+
+  /// 여러 품목 한 번에 빼기
+  Future<void> removeByKeys(Iterable<String> keys) async {
+    final ref = await _cartRef();
+    final batch = FirebaseFirestore.instance.batch();
+    for (final key in keys) {
+      batch.delete(ref.doc(key));
+    }
+    await batch.commit();
+  }
 }

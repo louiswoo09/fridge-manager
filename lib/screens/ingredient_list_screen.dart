@@ -19,6 +19,7 @@ import 'package:image_picker/image_picker.dart';
 import '../services/ingredient_recognition_service.dart';
 import 'recognition_review_screen.dart';
 import 'photo_collect_screen.dart';
+import '../services/product_name_formatter.dart';
 
 class IngredientListScreen extends StatefulWidget {
   final OnRequestRecipeKeywordSearch? onRequestRecipeKeywordSearch;
@@ -123,15 +124,36 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
       _selectedStorage != '전체' ||
       _selectedExpiry != null;
 
-  /// 이름이 같은 재료끼리 묶음 (목록 순서 유지 → 소비기한 순)
+  bool _isExpired(Ingredient e) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final exp = DateTime(
+      e.expirationDate.year,
+      e.expirationDate.month,
+      e.expirationDate.day,
+    );
+    return exp.isBefore(today);
+  }
+
+  /// 이름이 같은 재료끼리 묶음
+  /// 묶음 안: 남은 것(임박순) → 지난 것 / 묶음끼리: 대표(첫 건) 소비기한 순
   List<List<Ingredient>> _groupByName(List<Ingredient> items) {
     final groups = <String, List<Ingredient>>{};
     for (final item in items) {
       groups.putIfAbsent(item.name.trim(), () => []).add(item);
     }
-    return groups.values.toList();
-  }
 
+    final result = groups.values.map((lots) {
+      final fresh = lots.where((e) => !_isExpired(e)).toList();
+      final expired = lots.where(_isExpired).toList();
+      return [...fresh, ...expired];
+    }).toList();
+
+    result.sort(
+      (a, b) => a.first.expirationDate.compareTo(b.first.expirationDate),
+    );
+    return result;
+  }
   // ───────────────────────── 생명주기 ─────────────────────────
 
   @override
@@ -1015,8 +1037,11 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
       final ingredients = await Navigator.push<List<Ingredient>>(
         context,
         MaterialPageRoute(
-          builder: (_) =>
-              RecognitionReviewScreen(result: result, photos: photos),
+          builder: (_) => RecognitionReviewScreen(
+            result: result,
+            photos: photos,
+            existingItems: _items,
+          ),
         ),
       );
       if (ingredients == null || ingredients.isEmpty || !mounted) return;
@@ -1036,6 +1061,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(message)));
+        await _offerCartCleanup(ingredients);
       } catch (e) {
         _snack('등록 중 오류: $e');
       }
@@ -1044,6 +1070,135 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop(); // 안내 닫기
       _snack(friendlyError(e, fallback: '식재료 인식에 실패했어요'));
+    }
+  }
+
+  // ───────────────────────── 담아놓기 정리 제안 ─────────────────────────
+
+  /// 비교용 이름 정리: 괄호 내용 제거, 공백 제거, 표기 통일
+  String _baseName(String name) => _normalizeName(
+    name.replaceAll(RegExp(r'\([^)]*\)'), '').replaceAll(' ', '').trim(),
+  );
+
+  /// 담아놓기(KAMIS) 이름의 비교 후보: "포도/샤인머스켓" → [포도, 샤인머스캣]
+  List<String> _cartNameCandidates(String display) =>
+      display.split('/').map(_baseName).where((n) => n.isNotEmpty).toList();
+
+  /// 자주 섞여 쓰이는 표기 → 하나로 통일 (비교할 때만 사용)
+  static const _nameAliases = {
+    '메론': '멜론',
+    '샤인머스켓': '샤인머스캣',
+    '소세지': '소시지',
+    '쭈꾸미': '주꾸미',
+    '브로컬리': '브로콜리',
+    '참다래': '키위',
+    '케찹': '케첩',
+  };
+
+  String _normalizeName(String name) {
+    var result = name;
+    _nameAliases.forEach((from, to) => result = result.replaceAll(from, to));
+    return result;
+  }
+
+  bool _isNameMatch(String a, String b) {
+    if (a.isEmpty || b.isEmpty) return false;
+    if (a == b) return true;
+    final shorter = a.length <= b.length ? a : b;
+    final longer = a.length <= b.length ? b : a;
+    return shorter.length >= 2 && longer.endsWith(shorter);
+  }
+
+  /// 등록한 재료와 이름이 맞는 담아놓기 품목이 있으면 빼기를 제안
+  Future<void> _offerCartCleanup(List<Ingredient> registered) async {
+    final List<Map<String, dynamic>> cart;
+    try {
+      cart = await CartService().getItems();
+    } catch (_) {
+      return; // 정리 제안은 부가 기능이라 실패해도 조용히 넘어감
+    }
+    if (cart.isEmpty || !mounted) return;
+
+    final names = registered
+        .map((e) => _baseName(e.name))
+        .where((n) => n.isNotEmpty)
+        .toSet();
+
+    // (담아놓기 품목, 표시 이름, 맞은 재료 이름)
+    final matches = <({String key, String display, String matched})>[];
+    for (final c in cart) {
+      final display = (c['displayName'] ?? c['productName'] ?? '').toString();
+      final candidates = _cartNameCandidates(display);
+      String? matched;
+      for (final n in names) {
+        if (candidates.any((cand) => _isNameMatch(cand, n))) {
+          matched = n;
+          break;
+        }
+      }
+      if (matched != null) {
+        matches.add((
+          key: c['_key'] as String,
+          display: display,
+          matched: matched,
+        ));
+      }
+    }
+    if (matches.isEmpty || !mounted) return;
+
+    final selected = matches.map((m) => m.key).toSet(); // 기본은 전부 선택
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialog) => AlertDialog(
+          title: const Text('담아놓기에 있던 재료를 샀나요?'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: matches
+                  .map(
+                    (m) => CheckboxListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      value: selected.contains(m.key),
+                      onChanged: (v) => setDialog(() {
+                        if (v == true) {
+                          selected.add(m.key);
+                        } else {
+                          selected.remove(m.key);
+                        }
+                      }),
+                      title: Text(m.display),
+                      subtitle: Text('등록한 "${m.matched}"'),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('그대로 두기'),
+            ),
+            TextButton(
+              onPressed: selected.isEmpty
+                  ? null
+                  : () => Navigator.pop(ctx, true),
+              child: const Text('담아놓기에서 빼기'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    try {
+      await CartService().removeByKeys(selected);
+      _snack('담아놓기에서 ${selected.length}개를 뺐어요');
+    } catch (e) {
+      _snack('담아놓기 정리 실패: $e');
     }
   }
 
@@ -1624,6 +1779,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
   /// 같은 이름 2건 이상 묶음 카드
   Widget _buildGroupCard(List<Ingredient> lots, DateTime now) {
     final first = lots.first; // 가장 임박한 것
+    final expiredCount = lots.where(_isExpired).length;
     final name = first.name.trim();
 
     // 단위가 다 같으면 합계, 다르면 건수
@@ -1664,6 +1820,15 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
                 text: ' · ${lots.length}건',
                 style: const TextStyle(color: Colors.grey),
               ),
+              // 대표가 남은 것인데 지난 건이 섞여 있을 때만
+              if (expiredCount > 0 && !_isExpired(first))
+                TextSpan(
+                  text: ' · 지남 $expiredCount건',
+                  style: TextStyle(
+                    color: Colors.red.shade300,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
             ],
           ),
         ),

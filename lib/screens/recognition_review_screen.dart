@@ -9,11 +9,13 @@ import 'package:image_picker/image_picker.dart';
 class RecognitionReviewScreen extends StatefulWidget {
   final RecognitionResult result;
   final List<XFile> photos;
+  final List<Ingredient> existingItems;
 
   const RecognitionReviewScreen({
     super.key,
     required this.result,
     this.photos = const [],
+    this.existingItems = const [],
   });
 
   @override
@@ -164,6 +166,73 @@ class _RecognitionReviewScreenState extends State<RecognitionReviewScreen> {
     Navigator.pop(context, ingredients);
   }
 
+  bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  String _dDay(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final days = DateTime(
+      date.year,
+      date.month,
+      date.day,
+    ).difference(today).inDays;
+    if (days < 0) return '${days.abs()}일 지남';
+    if (days == 0) return 'D-Day';
+    return 'D-$days';
+  }
+
+  /// 냉장고에 같은 이름 재료가 있으면 안내 한 줄
+  Widget? _buildExistingHint(_Draft d) {
+    final name = d.name.text.trim();
+    if (name.isEmpty) return null;
+
+    final same = widget.existingItems
+        .where((e) => e.name.trim() == name)
+        .toList();
+    if (same.isEmpty) return null;
+
+    // 등록하면 자동으로 합쳐지는 경우 (서비스의 합치기 기준과 동일)
+    final exact = same
+        .where(
+          (e) =>
+              e.category == d.category &&
+              e.unit == d.unit &&
+              e.storage == d.storage &&
+              _sameDay(e.expirationDate, d.expirationDate),
+        )
+        .firstOrNull;
+
+    final String text;
+    if (exact != null) {
+      text =
+          '소비기한이 같은 ${_dDay(exact.expirationDate)} $name ${exact.quantity}${exact.unit}와 합쳐져요';
+    } else {
+      final shown = same
+          .take(3)
+          .map((e) => '${_dDay(e.expirationDate)} ${e.quantity}${e.unit}')
+          .join(', ');
+      final more = same.length > 3 ? ' 외 ${same.length - 3}건' : '';
+      text = '냉장고에 $name ${same.length}건 있어요 · $shown$more';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 12, top: 2),
+      child: Row(
+        children: [
+          Icon(Icons.kitchen, size: 14, color: Colors.indigo.shade400),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(fontSize: 12, color: Colors.indigo.shade700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   String _formatDate(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
@@ -242,6 +311,7 @@ class _RecognitionReviewScreenState extends State<RecognitionReviewScreen> {
                   child: TextField(
                     controller: d.name,
                     enabled: enabled,
+                    onChanged: (_) => setState(() {}),
                     decoration: const InputDecoration(
                       hintText: '재료 이름',
                       isDense: true,
@@ -250,6 +320,7 @@ class _RecognitionReviewScreenState extends State<RecognitionReviewScreen> {
                 ),
               ],
             ),
+            ?_buildExistingHint(d),
             Padding(
               padding: const EdgeInsets.only(left: 12, top: 4),
               child: Row(
@@ -372,8 +443,9 @@ class _PhotoViewer extends StatefulWidget {
 }
 
 class _PhotoViewerState extends State<_PhotoViewer> {
-  late final PageController _pageController =
-      PageController(initialPage: widget.initialIndex);
+  late final PageController _pageController = PageController(
+    initialPage: widget.initialIndex,
+  );
   late int _index = widget.initialIndex;
 
   @override
@@ -402,10 +474,7 @@ class _PhotoViewerState extends State<_PhotoViewer> {
           minScale: 1,
           maxScale: 5,
           child: Center(
-            child: Image.file(
-              File(widget.photos[i].path),
-              fit: BoxFit.contain,
-            ),
+            child: Image.file(File(widget.photos[i].path), fit: BoxFit.contain),
           ),
         ),
       ),
