@@ -1,4 +1,5 @@
 import json
+from datetime import date, datetime, timedelta, timezone
 
 # ───────── 레시피 AI 변형 ─────────
 
@@ -26,10 +27,11 @@ VARIANT_RULES = """너는 TV 예능 프로그램 '냉장고를 부탁해'에 출
    - ingredients_used: 그 단계에서 사용하는 재료명 리스트.
    - time_seconds: instruction에 명시한 시간을 초 단위로 (예: 2분 = 120). 시간 없으면 null을 작성할 것.
    instruction에는 화력(중불/약불/강불), 익힘 정도, 색깔 변화 등 구체적 정보를 가능한 포함해 작성할 것.
-8. 양념(seasoning)은 다음 양념만 추가할것: 소금, 설탕, 간장, 식용유, 참기름, 후추, 고춧가루, 된장, 고추장, 식초, 다진마늘, 마요네즈, 케첩, 밥, 물, 김치.
-9. 요리의 정체성을 유지하는 데 필요한 주재료(예: 고기, 해산물, 면 등)가 [냉장고 속 재료]에 존재하지 않는 경우, 역할이 유사한 대체 재료도 없다면 무리하게 레시피를 변형하지 말고 insufficient를 true로 설정하고 다른 필드는 비운채 tip 필드에 "OO 재료를 더해주시면 훌륭한 요리가 될 것 같아요!" 메시지를 적을것. 
+8. 양념(seasoning)은 다음 양념만 추가할것: 소금, 설탕, 간장, 식용유, 참기름, 후추, 고춧가루, 된장, 고추장, 식초, 다진마늘, 물.
+9. 주어진 레시피의 정체성을 유지하는 데 필요한 주재료(예: 고기, 해산물, 면 등)가 존재하지 않는 경우, 부재료만 사용해서 무리하게 레시피를 변형하거나 없는 재료를 입력하지 말고 insufficient를 true로 설정한뒤 다른 필드는 비운채 tip 필드에 "OO 재료를 더해주시면 훌륭한 요리가 될 것 같아요!" 메시지만 적을것.
+   - 레시피 변형 시 주재료의 분류(예: 고기, 해산물, 면 등)와 조리 방식 분류(예: 조림, 볶음, 구이 등)를 지킬 수 없다면 변형해서는 안된다.
 10. [냉장고 속 재료]나 [담아놓기], 양념을 제외한 권장 재료나 요리를 더 맛있게 만드는 팁은 변형 레시피를 기준으로 tip 필드에 작성할 것. 만약 팁이 여러 개면 팁마다 숫자를 부여하고 줄바꿈(\n)으로 구분할 것. 작성할 팁이 없으면 tip은 null로 작성할 것.
-11. servings는 기본 1인분 기준으로 작성.
+11. servings는 기본 1인분 기준으로 작성할 것.
 12. 응답은 반드시 아래 스키마의 JSON으로만 작성. 마크다운 ```json 감싸지 말고 순수 JSON만 출력. 설명, 인사말, 결론 일체 작성하지 말 것.
 
 JSON 스키마:
@@ -112,7 +114,7 @@ def build_variant_prompt(
 def build_analysis_prompt(ingredients: list[str], imminent: list[str]) -> str:
     imminent_text = ", ".join(imminent) if imminent else "없음"
     return f"""
-당신은 냉장고를 분석해 사용자의 편의성을 돕는 슈퍼 프로페셔널 인텔리전트 AI입니다. 
+당신은 냉장고를 분석해 사용자의 편의성을 돕는 슈퍼 프로rce_typ페셔널 인텔리전트 AI입니다. 
 사용자의 냉장고 속 보유 식재료를 보고 간단히 분석해주세요.
 
 [보유 식재료]
@@ -179,9 +181,22 @@ RECOGNIZE_PROMPT = """너는 식재료 인식 전문가야. 사진을 보고 냉
 - storage: 냉장, 냉동, 실온 중 그 재료를 보통 보관하는 방법
 - 대마, 양귀비 등 마약류나 독버섯처럼 먹으면 위험한 것은 작성하지 말 것.
 - 응답은 아래 JSON 형식으로만 작성하고 설명은 쓰지 말 것.
+- expiration_date: 포장이나 라벨에 소비기한, 유통기한, "~까지" 날짜가 보이면 그 날짜를 "YYYY-MM-DD"로 작성할 것. 연도가 없으면 [오늘 날짜] 이후 가장 가까운 날짜로 연도를 정할 것. 제조일, 포장일, 생산일은 소비기한이 아니므로 쓰지 말 것. 날짜가 보이지 않거나 확실하지 않으면 null.
+- 영수증에 적힌 날짜는 구매일이므로 영수증 품목의 expiration_date는 항상 null.
 
-{"source_type": "ingredients", "items": [{"name": "양파", "category": "채소", "quantity": 3, "unit": "개", "storage": "실온"}]}
+{"source_type": "ingredients", "items": [{"name": "우유", "category": "유제품", "quantity": 1, "unit": "개", "storage": "냉장", "expiration_date": "2026-11-15"}, {"name": "양파", "category": "채소", "quantity": 3, "unit": "개", "storage": "실온", "expiration_date": null}]}
 """
+
+KST = timezone(timedelta(hours=9))
+
+
+def _today_kst() -> date:
+    return datetime.now(KST).date()
+
+
+def build_recognize_prompt() -> str:
+    """연도 없는 날짜(예: 11.15까지)를 판단할 수 있게 오늘 날짜를 붙임"""
+    return RECOGNIZE_PROMPT + f"\n[오늘 날짜]\n{_today_kst().isoformat()}\n"
 
 CATEGORIES = {"채소", "육류", "유제품", "과일", "해산물", "기타"}
 UNITS = {"개", "g", "ml", "L", "팩"}
@@ -210,6 +225,18 @@ def _to_number(value) -> float:
     except (TypeError, ValueError):
         return 1.0
 
+def _parse_expiration(value) -> str | None:
+    """YYYY-MM-DD만 받고, 말이 안 되는 날짜(2000년 이전, 10년 넘게 먼 날짜)는 버림
+    이미 지난 날짜는 남겨둠 (앱에서 '이미 지난 날짜'로 표시)"""
+    if not value:
+        return None
+    try:
+        d = date.fromisoformat(str(value).strip())
+    except ValueError:
+        return None
+    if d.year < 2000 or d > _today_kst() + timedelta(days=365 * 30):
+        return None
+    return d.isoformat()    
 
 def parse_recognition(text: str) -> dict:
     """Gemini 응답을 앱이 그대로 쓸 수 있는 값으로 정리"""
@@ -228,7 +255,7 @@ def parse_recognition(text: str) -> dict:
     if not isinstance(raw_items, list):
         raw_items = []
 
-    merged: dict[tuple[str, str], dict] = {}
+    merged: dict[tuple[str, str, str | None], dict] = {}
     for raw in raw_items[:MAX_RECOGNIZED_ITEMS]:
         if not isinstance(raw, dict):
             continue
@@ -249,8 +276,10 @@ def parse_recognition(text: str) -> dict:
         if unit == "L" and qty != int(qty):
             unit, qty = "ml", qty * 1000
         quantity = max(1, round(qty))
+        expiration = _parse_expiration(raw.get("expiration_date"))
 
-        key = (name, unit)
+        # 소비기한이 다르면 다른 항목 (같은 우유라도 날짜가 다르면 따로)
+        key = (name, unit, expiration)
         if key in merged:
             merged[key]["quantity"] += quantity
         else:
@@ -260,6 +289,7 @@ def parse_recognition(text: str) -> dict:
                 "quantity": quantity,
                 "unit": unit,
                 "storage": storage,
+                "expiration_date": expiration,
             }
 
     return {"source_type": source, "items": list(merged.values())}

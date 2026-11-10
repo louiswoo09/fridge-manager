@@ -97,7 +97,7 @@ async def recognize_ingredients(req: RecognizeRequest):
 
     try:
         text = await gemini_service.generate(
-            ai_service.RECOGNIZE_PROMPT,
+            ai_service.build_recognize_prompt(),
             json_mode=True,
             timeout=90,
             images=[(img.mime_type, img.data) for img in req.images],

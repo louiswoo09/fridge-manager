@@ -11,6 +11,7 @@ class RecognizedIngredient {
   final int quantity;
   final String unit;
   final String storage;
+  final DateTime? expirationDate;
 
   RecognizedIngredient({
     required this.name,
@@ -18,6 +19,7 @@ class RecognizedIngredient {
     required this.quantity,
     required this.unit,
     required this.storage,
+    this.expirationDate,
   });
 
   factory RecognizedIngredient.fromJson(Map<String, dynamic> json) {
@@ -27,6 +29,9 @@ class RecognizedIngredient {
       quantity: (json['quantity'] as num?)?.toInt() ?? 1,
       unit: json['unit']?.toString() ?? '개',
       storage: json['storage']?.toString() ?? '냉장',
+      expirationDate: DateTime.tryParse(
+        json['expiration_date']?.toString() ?? '',
+      ),
     );
   }
 }

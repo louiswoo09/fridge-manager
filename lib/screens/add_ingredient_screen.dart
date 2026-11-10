@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/ingredient.dart';
 import '../services/ingredient_service.dart';
+import '../widgets/expiration_date_field.dart';
 
 class AddIngredientScreen extends StatefulWidget {
   final String? prefilledName;
@@ -37,18 +38,6 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
     _nameController.dispose();
     _quantityController.dispose();
     super.dispose();
-  }
-
-  Future<void> _selectDate(BuildContext context) async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _expirationDate,
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365 * 3)),
-    );
-    if (picked != null) {
-      setState(() => _expirationDate = picked);
-    }
   }
 
   /// 이름 끝 글자에 받침이 있으면 '을', 없으면 '를'
@@ -171,18 +160,9 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
               onChanged: (v) => setState(() => _storage = v!),
             ),
             const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '소비기한: ${_expirationDate.year}-${_expirationDate.month.toString().padLeft(2, '0')}-${_expirationDate.day.toString().padLeft(2, '0')}',
-                  style: const TextStyle(fontSize: 16),
-                ),
-                TextButton(
-                  onPressed: () => _selectDate(context),
-                  child: const Text('날짜 선택'),
-                ),
-              ],
+            ExpirationDateField(
+              value: _expirationDate,
+              onChanged: (d) => setState(() => _expirationDate = d),
             ),
             const SizedBox(height: 32),
             SizedBox(

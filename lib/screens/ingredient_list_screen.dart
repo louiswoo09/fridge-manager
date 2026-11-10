@@ -19,7 +19,6 @@ import 'package:image_picker/image_picker.dart';
 import '../services/ingredient_recognition_service.dart';
 import 'recognition_review_screen.dart';
 import 'photo_collect_screen.dart';
-import '../services/product_name_formatter.dart';
 
 class IngredientListScreen extends StatefulWidget {
   final OnRequestRecipeKeywordSearch? onRequestRecipeKeywordSearch;

@@ -8,6 +8,8 @@ import 'join_fridge_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import '../services/date_ocr_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -348,6 +350,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 },
                 icon: const Icon(Icons.key, size: 16),
                 label: const Text('ID 토큰 복사(개발용)'),
+              ),
+
+            // 개발용: ML Kit 글자 인식 결과 확인 (릴리스 빌드에선 사라짐)
+            if (kDebugMode)
+              TextButton.icon(
+                onPressed: () async {
+                  final file = await ImagePicker().pickImage(
+                    source: ImageSource.gallery,
+                  );
+                  if (file == null) return;
+
+                  final watch = Stopwatch()..start();
+                  final lines = await DateOcrService.readLines(file.path);
+                  watch.stop();
+
+                  debugPrint(
+                    'OCR ${watch.elapsedMilliseconds}ms\n${lines.join('\n')}',
+                  );
+                  if (!context.mounted) return;
+
+                  showDialog(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: Text('읽은 글자 (${watch.elapsedMilliseconds}ms)'),
+                      content: SingleChildScrollView(
+                        child: SelectableText(
+                          lines.isEmpty ? '(읽은 글자 없음)' : lines.join('\n'),
+                        ),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text('닫기'),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.text_snippet, size: 16),
+                label: const Text('개발용: 글자 인식 테스트'),
               ),
 
             // 로그아웃 버튼

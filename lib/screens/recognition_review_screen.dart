@@ -3,6 +3,7 @@ import '../models/ingredient.dart';
 import '../services/ingredient_recognition_service.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
+import '../widgets/expiration_date_field.dart';
 
 /// 사진·영수증 인식 결과를 확인하고 고친 뒤 등록할 재료 목록을 돌려주는 화면
 /// 등록 버튼을 누르면 고친 재료 목록을 이전 화면으로 돌려줌
@@ -26,6 +27,8 @@ class RecognitionReviewScreen extends StatefulWidget {
 /// 화면에서 수정 중인 재료 하나
 class _Draft {
   bool selected = true;
+  bool dateFromPhoto; // 사진에서 읽은 날짜인지
+  bool dateEdited = false; // 사용자가 직접 바꿨는지
   final TextEditingController name;
   final TextEditingController quantity;
   String category;
@@ -40,6 +43,7 @@ class _Draft {
     required this.unit,
     required this.storage,
     required this.expirationDate,
+    this.dateFromPhoto = false,
   }) : name = TextEditingController(text: name),
        quantity = TextEditingController(text: '$quantity');
 
@@ -84,7 +88,8 @@ class _RecognitionReviewScreenState extends State<RecognitionReviewScreen> {
             category: _pick(e.category, _categories, '기타'),
             unit: _pick(e.unit, _units, '개'),
             storage: _pick(e.storage, _storages, '냉장'),
-            expirationDate: _defaultExpiration,
+            expirationDate: e.expirationDate ?? _defaultExpiration,
+            dateFromPhoto: e.expirationDate != null,
           ),
         )
         .toList();
@@ -124,16 +129,6 @@ class _RecognitionReviewScreenState extends State<RecognitionReviewScreen> {
         ),
       );
     });
-  }
-
-  Future<void> _pickDate(_Draft d) async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: d.expirationDate,
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365 * 3)),
-    );
-    if (picked != null) setState(() => d.expirationDate = picked);
   }
 
   void _submit() {
@@ -233,9 +228,6 @@ class _RecognitionReviewScreenState extends State<RecognitionReviewScreen> {
     );
   }
 
-  String _formatDate(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
   Widget _dropdown(
     String value,
     List<String> options,
@@ -296,81 +288,140 @@ class _RecognitionReviewScreenState extends State<RecognitionReviewScreen> {
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
-      color: enabled ? null : Colors.grey.shade100,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(4, 8, 12, 4),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Checkbox(
-                  value: d.selected,
-                  onChanged: (v) => setState(() => d.selected = v ?? false),
-                ),
-                Expanded(
-                  child: TextField(
-                    controller: d.name,
-                    enabled: enabled,
-                    onChanged: (_) => setState(() {}),
-                    decoration: const InputDecoration(
-                      hintText: '재료 이름',
-                      isDense: true,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            ?_buildExistingHint(d),
-            Padding(
-              padding: const EdgeInsets.only(left: 12, top: 4),
-              child: Row(
+      surfaceTintColor: Colors.transparent, // 테마 색이 섞이지 않게
+      child: Opacity(
+        opacity: enabled ? 1 : 0.45, // 체크 해제하면 흐리게
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(4, 8, 12, 4),
+          child: Column(
+            children: [
+              Row(
                 children: [
-                  SizedBox(
-                    width: 64,
+                  Checkbox(
+                    value: d.selected,
+                    onChanged: (v) => setState(() => d.selected = v ?? false),
+                  ),
+                  Expanded(
                     child: TextField(
-                      controller: d.quantity,
+                      controller: d.name,
                       enabled: enabled,
-                      keyboardType: TextInputType.number,
+                      onChanged: (_) => setState(() {}),
                       decoration: const InputDecoration(
-                        labelText: '수량',
+                        hintText: '재료 이름',
                         isDense: true,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  _dropdown(d.unit, _units, enabled, (v) => d.unit = v),
-                  const Spacer(),
-                  _dropdown(
-                    d.category,
-                    _categories,
-                    enabled,
-                    (v) => d.category = v,
-                  ),
-                  const SizedBox(width: 12),
-                  _dropdown(
-                    d.storage,
-                    _storages,
-                    enabled,
-                    (v) => d.storage = v,
-                  ),
                 ],
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(left: 12),
-              child: Row(
-                children: [
-                  const Text('소비기한', style: TextStyle(color: Colors.grey)),
-                  const Spacer(),
-                  TextButton.icon(
-                    onPressed: enabled ? () => _pickDate(d) : null,
-                    icon: const Icon(Icons.event, size: 18),
-                    label: Text(_formatDate(d.expirationDate)),
-                  ),
-                ],
+              ?_buildExistingHint(d),
+              Padding(
+                padding: const EdgeInsets.only(left: 12, top: 4),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 64,
+                      child: TextField(
+                        controller: d.quantity,
+                        enabled: enabled,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: '수량',
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _dropdown(d.unit, _units, enabled, (v) => d.unit = v),
+                    const Spacer(),
+                    _dropdown(
+                      d.category,
+                      _categories,
+                      enabled,
+                      (v) => d.category = v,
+                    ),
+                    const SizedBox(width: 12),
+                    _dropdown(
+                      d.storage,
+                      _storages,
+                      enabled,
+                      (v) => d.storage = v,
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 6, 0, 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Text(
+                          '소비기한',
+                          style: TextStyle(color: Colors.grey, fontSize: 13),
+                        ),
+                        _dateTag(d),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    // 체크 해제한 카드는 다른 칸처럼 흐리게 + 못 누르게
+                    IgnorePointer(
+                      ignoring: !enabled,
+                      child: Opacity(
+                        opacity: enabled ? 1 : 0.5,
+                        child: ExpirationDateField(
+                          value: d.expirationDate,
+                          showLabel: false,
+                          onChanged: (v) => setState(() {
+                            d.expirationDate = v;
+                            d.dateFromPhoto = false;
+                            d.dateEdited = true;
+                          }),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 소비기한 옆 작은 표시: 이미 지남 / 사진에서 읽음 / 기본 7일
+  Widget _dateTag(_Draft d) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    String? text;
+    Color color = Colors.grey;
+    if (d.expirationDate.isBefore(today)) {
+      text = '이미 지난 날짜';
+      color = Colors.red;
+    } else if (d.dateFromPhoto) {
+      text = '사진에서 읽음';
+      color = Colors.indigo;
+    } else if (!d.dateEdited) {
+      text = '기본 $_defaultShelfDays일';
+    }
+    if (text == null) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(left: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 11,
+          color: color,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );

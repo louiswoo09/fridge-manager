@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/ingredient.dart';
 import '../services/ingredient_service.dart';
+import '../widgets/expiration_date_field.dart';
 
 class EditIngredientScreen extends StatefulWidget {
   final Ingredient ingredient;
@@ -42,18 +43,6 @@ class _EditIngredientScreenState extends State<EditIngredientScreen> {
     _nameController.dispose();
     _quantityController.dispose();
     super.dispose();
-  }
-
-  Future<void> _selectDate(BuildContext context) async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _expirationDate,
-      firstDate: DateTime(2000),
-      lastDate: DateTime.now().add(const Duration(days: 365 * 3)),
-    );
-    if (picked != null) {
-      setState(() => _expirationDate = picked);
-    }
   }
 
   Future<void> _save() async {
@@ -154,18 +143,9 @@ class _EditIngredientScreenState extends State<EditIngredientScreen> {
               onChanged: (v) => setState(() => _storage = v!),
             ),
             const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '소비기한: ${_expirationDate.year}-${_expirationDate.month.toString().padLeft(2, '0')}-${_expirationDate.day.toString().padLeft(2, '0')}',
-                  style: const TextStyle(fontSize: 16),
-                ),
-                TextButton(
-                  onPressed: () => _selectDate(context),
-                  child: const Text('날짜 선택'),
-                ),
-              ],
+            ExpirationDateField(
+              value: _expirationDate,
+              onChanged: (d) => setState(() => _expirationDate = d),
             ),
             const SizedBox(height: 32),
             SizedBox(
