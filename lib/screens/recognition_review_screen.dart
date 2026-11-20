@@ -4,6 +4,7 @@ import '../services/ingredient_recognition_service.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import '../widgets/expiration_date_field.dart';
+import '../services/shelf_life_service.dart';
 
 /// 사진·영수증 인식 결과를 확인하고 고친 뒤 등록할 재료 목록을 돌려주는 화면
 /// 등록 버튼을 누르면 고친 재료 목록을 이전 화면으로 돌려줌
@@ -59,18 +60,18 @@ class _RecognitionReviewScreenState extends State<RecognitionReviewScreen> {
   static const _units = ['개', 'g', 'ml', 'L', '팩'];
   static const _storages = ['냉장', '냉동', '실온'];
 
-  /// 임시 기본값 (직접 추가와 동일). 11월 소비기한 자동 계산으로 교체 예정
-  static const _defaultShelfDays = 7;
-
   late final List<_Draft> _drafts;
 
-  DateTime get _defaultExpiration {
-    final now = DateTime.now();
-    return DateTime(
-      now.year,
-      now.month,
-      now.day,
-    ).add(const Duration(days: _defaultShelfDays));
+  /// 이름·카테고리·보관 방법으로 계산한 소비기한
+  DateTime _estimateFor(String name, String category, String storage) =>
+      ShelfLifeService()
+          .estimate(name: name, category: category, storage: storage)
+          .expirationDate;
+
+  /// 사진 날짜도, 직접 고친 날짜도 아니면 자동 계산 값으로 다시 맞춤
+  void _reestimate(_Draft d) {
+    if (d.dateFromPhoto || d.dateEdited) return;
+    d.expirationDate = _estimateFor(d.name.text, d.category, d.storage);
   }
 
   /// 서버가 이미 정리해서 보내지만, 혹시 모를 값은 기본값으로
@@ -80,19 +81,21 @@ class _RecognitionReviewScreenState extends State<RecognitionReviewScreen> {
   @override
   void initState() {
     super.initState();
-    _drafts = widget.result.items
-        .map(
-          (e) => _Draft(
-            name: e.name,
-            quantity: e.quantity,
-            category: _pick(e.category, _categories, '기타'),
-            unit: _pick(e.unit, _units, '개'),
-            storage: _pick(e.storage, _storages, '냉장'),
-            expirationDate: e.expirationDate ?? _defaultExpiration,
-            dateFromPhoto: e.expirationDate != null,
-          ),
-        )
-        .toList();
+    _drafts = widget.result.items.map((e) {
+      final category = _pick(e.category, _categories, '기타');
+      final storage = _pick(e.storage, _storages, '냉장');
+      return _Draft(
+        name: e.name,
+        quantity: e.quantity,
+        category: category,
+        unit: _pick(e.unit, _units, '개'),
+        storage: storage,
+        // 사진에서 읽은 날짜가 없으면 자동 계산
+        expirationDate:
+            e.expirationDate ?? _estimateFor(e.name, category, storage),
+        dateFromPhoto: e.expirationDate != null,
+      );
+    }).toList();
   }
 
   @override
@@ -125,7 +128,7 @@ class _RecognitionReviewScreenState extends State<RecognitionReviewScreen> {
           category: '기타',
           unit: '개',
           storage: '냉장',
-          expirationDate: _defaultExpiration,
+          expirationDate: _estimateFor('', '기타', '냉장'),
         ),
       );
     });
@@ -305,7 +308,7 @@ class _RecognitionReviewScreenState extends State<RecognitionReviewScreen> {
                     child: TextField(
                       controller: d.name,
                       enabled: enabled,
-                      onChanged: (_) => setState(() {}),
+                      onChanged: (_) => setState(() => _reestimate(d)),
                       decoration: const InputDecoration(
                         hintText: '재료 이름',
                         isDense: true,
@@ -334,19 +337,15 @@ class _RecognitionReviewScreenState extends State<RecognitionReviewScreen> {
                     const SizedBox(width: 8),
                     _dropdown(d.unit, _units, enabled, (v) => d.unit = v),
                     const Spacer(),
-                    _dropdown(
-                      d.category,
-                      _categories,
-                      enabled,
-                      (v) => d.category = v,
-                    ),
+                    _dropdown(d.category, _categories, enabled, (v) {
+                      d.category = v;
+                      _reestimate(d);
+                    }),
                     const SizedBox(width: 12),
-                    _dropdown(
-                      d.storage,
-                      _storages,
-                      enabled,
-                      (v) => d.storage = v,
-                    ),
+                    _dropdown(d.storage, _storages, enabled, (v) {
+                      d.storage = v;
+                      _reestimate(d);
+                    }),
                   ],
                 ),
               ),
@@ -391,7 +390,7 @@ class _RecognitionReviewScreenState extends State<RecognitionReviewScreen> {
     );
   }
 
-  /// 소비기한 옆 작은 표시: 이미 지남 / 사진에서 읽음 / 기본 7일
+  /// 소비기한 옆 작은 표시: 이미 지남 / 사진에서 읽음 / 자동 계산
   Widget _dateTag(_Draft d) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -405,7 +404,8 @@ class _RecognitionReviewScreenState extends State<RecognitionReviewScreen> {
       text = '사진에서 읽음';
       color = Colors.indigo;
     } else if (!d.dateEdited) {
-      text = '기본 $_defaultShelfDays일';
+      text = '자동 계산';
+      color = Colors.indigo.shade300;
     }
     if (text == null) return const SizedBox.shrink();
 

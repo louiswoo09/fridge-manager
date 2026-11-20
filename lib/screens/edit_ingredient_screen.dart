@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/ingredient.dart';
 import '../services/ingredient_service.dart';
 import '../widgets/expiration_date_field.dart';
+import '../services/shelf_life_service.dart';
 
 class EditIngredientScreen extends StatefulWidget {
   final Ingredient ingredient;
@@ -20,6 +21,7 @@ class _EditIngredientScreenState extends State<EditIngredientScreen> {
   late String _unit;
   late String _storage;
   late DateTime _expirationDate;
+  late ShelfLifeEstimate _estimate;
 
   final List<String> _categories = ['채소', '육류', '유제품', '과일', '해산물', '기타'];
   final List<String> _units = ['개', 'g', 'ml', 'L', '팩'];
@@ -36,6 +38,15 @@ class _EditIngredientScreenState extends State<EditIngredientScreen> {
     _unit = widget.ingredient.unit;
     _storage = widget.ingredient.storage;
     _expirationDate = widget.ingredient.expirationDate;
+    _updateEstimate();
+  }
+
+  void _updateEstimate() {
+    _estimate = ShelfLifeService().estimate(
+      name: _nameController.text,
+      category: _category,
+      storage: _storage,
+    );
   }
 
   @override
@@ -94,6 +105,7 @@ class _EditIngredientScreenState extends State<EditIngredientScreen> {
           children: [
             TextField(
               controller: _nameController,
+              onChanged: (_) => setState(_updateEstimate),
               decoration: const InputDecoration(
                 labelText: '식재료 이름',
                 border: OutlineInputBorder(),
@@ -130,7 +142,10 @@ class _EditIngredientScreenState extends State<EditIngredientScreen> {
               items: _categories
                   .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                   .toList(),
-              onChanged: (v) => setState(() => _category = v!),
+              onChanged: (v) => setState(() {
+                _category = v!;
+                _updateEstimate();
+              }),
             ),
             const SizedBox(height: 16),
             const Text('보관 방법', style: TextStyle(color: Colors.grey)),
@@ -140,11 +155,30 @@ class _EditIngredientScreenState extends State<EditIngredientScreen> {
               items: _storages
                   .map((s) => DropdownMenuItem(value: s, child: Text(s)))
                   .toList(),
-              onChanged: (v) => setState(() => _storage = v!),
+              onChanged: (v) => setState(() {
+                _storage = v!;
+                _updateEstimate();
+              }),
             ),
             const SizedBox(height: 16),
+            Row(
+              children: [
+                const Text(
+                  '소비기한',
+                  style: TextStyle(color: Colors.grey, fontSize: 13),
+                ),
+                const Spacer(),
+                AutoExpirationChip(
+                  date: _estimate.expirationFrom(widget.ingredient.addedAt),
+                  current: _expirationDate,
+                  onApply: (d) => setState(() => _expirationDate = d),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
             ExpirationDateField(
               value: _expirationDate,
+              showLabel: false,
               onChanged: (d) => setState(() => _expirationDate = d),
             ),
             const SizedBox(height: 32),

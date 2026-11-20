@@ -1,0 +1,1136 @@
+{
+  "version": 7,
+  "source_note": "USDA FSIS FoodKeeper Data(CC0), 소비기한은 2/3 반올림 적용. similar는 FoodKeeper에 소비기한이 없는 재료. similar_to 품목의 값을 사용.",
+  "category_defaults_note": "품목 중앙값. 채소·과일 실온 3일, 육류·해산물·유제품 실온 1일, 기타는 직접 지정",
+  "category_defaults": {
+    "채소": {
+      "냉장": 7,
+      "냉동": 240,
+      "실온": 3
+    },
+    "과일": {
+      "냉장": 7,
+      "냉동": 240,
+      "실온": 3
+    },
+    "육류": {
+      "냉장": 4,
+      "냉동": 270,
+      "실온": 1
+    },
+    "해산물": {
+      "냉장": 2,
+      "냉동": 80,
+      "실온": 1
+    },
+    "유제품": {
+      "냉장": 26,
+      "냉동": 110,
+      "실온": 1
+    },
+    "기타": {
+      "냉장": 7,
+      "냉동": 30,
+      "실온": 3
+    }
+  },
+  "items": [
+    {
+      "name": "양파",
+      "aliases": [],
+      "category": "채소",
+      "days": {
+        "실온": 30,
+        "냉장": 60,
+        "냉동": 240
+      },
+      "source": "FoodKeeper #294 Onions (yellow, white, red, etc.) / 냉동: 식품안전나라 채소 8개월 기준으로 최대 240일"
+    },
+    {
+      "name": "쪽파",
+      "aliases": [
+        "실파"
+      ],
+      "category": "채소",
+      "days": {
+        "실온": 30,
+        "냉장": 7,
+        "냉동": 240
+      },
+      "source": "FoodKeeper #295 Onions (spring or green) / 냉동: 식품안전나라 채소 8개월 기준으로 최대 240일"
+    },
+    {
+      "name": "대파",
+      "aliases": [],
+      "category": "채소",
+      "days": {
+        "냉장": 12,
+        "냉동": 240
+      },
+      "source": "FoodKeeper #289 Leeks / 냉동: 식품안전나라 채소 8개월 기준으로 최대 240일"
+    },
+    {
+      "name": "감자",
+      "aliases": [],
+      "category": "채소",
+      "days": {
+        "실온": 50,
+        "냉장": 12,
+        "냉동": 240
+      },
+      "source": "FoodKeeper #297 Potatoes / 냉동: 식품안전나라 채소 8개월 기준으로 최대 240일"
+    },
+    {
+      "name": "고구마",
+      "aliases": [],
+      "category": "채소",
+      "days": {
+        "실온": 19
+      },
+      "source": "FoodKeeper #422 Yams/sweet potatoes"
+    },
+    {
+      "name": "당근",
+      "aliases": [],
+      "category": "채소",
+      "days": {
+        "냉장": 19,
+        "냉동": 240
+      },
+      "source": "FoodKeeper #279 Carrots, parsnips / 냉동: 식품안전나라 냉동보관 권장기간"
+    },
+    {
+      "name": "마늘",
+      "aliases": [],
+      "category": "채소",
+      "days": {
+        "실온": 30,
+        "냉장": 10,
+        "냉동": 30
+      },
+      "source": "FoodKeeper #285 Garlic"
+    },
+    {
+      "name": "생강",
+      "aliases": [],
+      "category": "채소",
+      "days": {
+        "실온": 4,
+        "냉장": 19,
+        "냉동": 180
+      },
+      "source": "FoodKeeper #286 Ginger root"
+    },
+    {
+      "name": "양배추",
+      "aliases": [],
+      "category": "채소",
+      "days": {
+        "냉장": 12,
+        "냉동": 240
+      },
+      "source": "FoodKeeper #278 Cabbage / 냉동: 식품안전나라 채소 8개월 기준으로 최대 240일"
+    },
+    {
+      "name": "상추",
+      "aliases": [],
+      "category": "채소",
+      "days": {
+        "냉장": 6
+      },
+      "source": "FoodKeeper #291 Lettuce (leaf, spinach)"
+    },
+    {
+      "name": "시금치",
+      "aliases": [],
+      "category": "채소",
+      "days": {
+        "냉장": 6
+      },
+      "source": "FoodKeeper #291 Lettuce (leaf, spinach)"
+    },
+    {
+      "name": "양상추",
+      "aliases": [
+        "로메인"
+      ],
+      "category": "채소",
+      "days": {
+        "냉장": 12
+      },
+      "source": "FoodKeeper #290 Lettuce (iceberg, romaine)"
+    },
+    {
+      "name": "청경채",
+      "aliases": [],
+      "category": "채소",
+      "days": {
+        "냉장": 3,
+        "냉동": 240
+      },
+      "source": "FoodKeeper #275 Bok choy / 냉동: 식품안전나라 채소 8개월 기준으로 최대 240일"
+    },
+    {
+      "name": "브로콜리",
+      "aliases": [],
+      "category": "채소",
+      "days": {
+        "냉장": 4,
+        "냉동": 240
+      },
+      "source": "FoodKeeper #276 Broccoli and broccoli raab (rapini) / 냉동: 식품안전나라 채소 8개월 기준으로 최대 240일"
+    },
+    {
+      "name": "콜리플라워",
+      "aliases": [],
+      "category": "채소",
+      "days": {
+        "냉장": 4,
+        "냉동": 240
+      },
+      "source": "FoodKeeper #280 Cauliflower / 냉동: 식품안전나라 채소 8개월 기준으로 최대 240일"
+    },
+    {
+      "name": "셀러리",
+      "aliases": [],
+      "category": "채소",
+      "days": {
+        "냉장": 12,
+        "냉동": 240
+      },
+      "source": "FoodKeeper #281 Celery / 냉동: 식품안전나라 채소 8개월 기준으로 최대 240일"
+    },
+    {
+      "name": "옥수수",
+      "aliases": [],
+      "category": "채소",
+      "days": {
+        "냉장": 2,
+        "냉동": 240
+      },
+      "source": "FoodKeeper #282 Corn on the cob / 냉동: 식품안전나라 냉동보관 권장기간"
+    },
+    {
+      "name": "오이",
+      "aliases": [],
+      "category": "채소",
+      "days": {
+        "냉장": 5
+      },
+      "source": "FoodKeeper #283 Cucumbers"
+    },
+    {
+      "name": "가지",
+      "aliases": [],
+      "category": "채소",
+      "days": {
+        "실온": 1,
+        "냉장": 6,
+        "냉동": 220
+      },
+      "source": "FoodKeeper #284 Eggplant"
+    },
+    {
+      "name": "버섯",
+      "aliases": [
+        "표고버섯",
+        "느타리버섯",
+        "새송이버섯",
+        "양송이버섯",
+        "팽이버섯"
+      ],
+      "category": "채소",
+      "days": {
+        "냉장": 6,
+        "냉동": 240
+      },
+      "source": "FoodKeeper #292 Mushrooms / 냉동: 식품안전나라 채소 8개월 기준으로 최대 240일"
+    },
+    {
+      "name": "파프리카",
+      "aliases": [
+        "피망"
+      ],
+      "category": "채소",
+      "days": {
+        "냉장": 11,
+        "냉동": 220
+      },
+      "source": "FoodKeeper #296 Peppers"
+    },
+    {
+      "name": "고추",
+      "aliases": [
+        "청양고추",
+        "풋고추"
+      ],
+      "category": "채소",
+      "days": {
+        "냉장": 7,
+        "냉동": 240
+      },
+      "source": "FoodKeeper #548 Hot peppers / 냉동: 식품안전나라 채소 8개월 기준으로 최대 240일"
+    },
+    {
+      "name": "애호박",
+      "aliases": [
+        "주키니"
+      ],
+      "category": "채소",
+      "days": {
+        "실온": 4,
+        "냉장": 5,
+        "냉동": 240
+      },
+      "source": "FoodKeeper #302 Squash (summer and zucchini) / 냉동: 식품안전나라 채소 8개월 기준으로 최대 240일"
+    },
+    {
+      "name": "단호박",
+      "aliases": [],
+      "category": "채소",
+      "days": {
+        "실온": 33,
+        "냉장": 70,
+        "냉동": 240
+      },
+      "source": "FoodKeeper #303 Squash (winter) / 냉동: 식품안전나라 채소 8개월 기준으로 최대 240일"
+    },
+    {
+      "name": "방울토마토",
+      "aliases": [],
+      "category": "채소",
+      "days": {
+        "실온": 10,
+        "냉장": 5
+      },
+      "source": "FoodKeeper #600 Cherry tomatoes"
+    },
+    {
+      "name": "콩나물",
+      "aliases": [
+        "숙주"
+      ],
+      "category": "채소",
+      "days": {
+        "냉장": 8
+      },
+      "source": "FoodKeeper #549 Bean sprouts"
+    },
+    {
+      "name": "아스파라거스",
+      "aliases": [],
+      "category": "채소",
+      "days": {
+        "냉장": 4,
+        "냉동": 150
+      },
+      "source": "FoodKeeper #271 Asparagus"
+    },
+    {
+      "name": "케일",
+      "aliases": [],
+      "category": "채소",
+      "days": {
+        "냉장": 4,
+        "냉동": 240
+      },
+      "source": "FoodKeeper #423 Kale / 냉동: 식품안전나라 채소 8개월 기준으로 최대 240일"
+    },
+    {
+      "name": "고수",
+      "aliases": [],
+      "category": "채소",
+      "days": {
+        "실온": 12,
+        "냉장": 19
+      },
+      "source": "FoodKeeper #506 Cilantro"
+    },
+    {
+      "name": "비트",
+      "aliases": [],
+      "category": "채소",
+      "days": {
+        "실온": 1,
+        "냉장": 12,
+        "냉동": 220
+      },
+      "source": "FoodKeeper #274 Beets"
+    },
+    {
+      "name": "래디시",
+      "aliases": [
+        "적환무"
+      ],
+      "category": "채소",
+      "days": {
+        "냉장": 13
+      },
+      "source": "FoodKeeper #299 Radishes"
+    },
+    {
+      "name": "완두콩",
+      "aliases": [
+        "껍질콩"
+      ],
+      "category": "채소",
+      "days": {
+        "냉장": 4,
+        "냉동": 240
+      },
+      "source": "FoodKeeper #273 Beans and peas (green, fava, lima, soybean, wax, snow, sugar snap)"
+    },
+    {
+      "name": "사과",
+      "aliases": [],
+      "category": "과일",
+      "days": {
+        "실온": 21,
+        "냉장": 37,
+        "냉동": 240
+      },
+      "source": "FoodKeeper #248 Apples"
+    },
+    {
+      "name": "바나나",
+      "aliases": [],
+      "category": "과일",
+      "days": {
+        "냉장": 3,
+        "냉동": 80
+      },
+      "source": "FoodKeeper #251 Bananas"
+    },
+    {
+      "name": "귤",
+      "aliases": [
+        "감귤"
+      ],
+      "category": "과일",
+      "days": {
+        "실온": 10,
+        "냉장": 17
+      },
+      "source": "FoodKeeper #256 Citrus fruit (lemon, lime, orange, grapefruit, tangerines, clementines)"
+    },
+    {
+      "name": "오렌지",
+      "aliases": [],
+      "category": "과일",
+      "days": {
+        "실온": 10,
+        "냉장": 17
+      },
+      "source": "FoodKeeper #256 Citrus fruit (lemon, lime, orange, grapefruit, tangerines, clementines)"
+    },
+    {
+      "name": "레몬",
+      "aliases": [
+        "라임"
+      ],
+      "category": "과일",
+      "days": {
+        "실온": 10,
+        "냉장": 17
+      },
+      "source": "FoodKeeper #256 Citrus fruit (lemon, lime, orange, grapefruit, tangerines, clementines)"
+    },
+    {
+      "name": "자몽",
+      "aliases": [],
+      "category": "과일",
+      "days": {
+        "실온": 10,
+        "냉장": 17
+      },
+      "source": "FoodKeeper #256 Citrus fruit (lemon, lime, orange, grapefruit, tangerines, clementines)"
+    },
+    {
+      "name": "포도",
+      "aliases": [
+        "샤인머스캣",
+        "거봉"
+      ],
+      "category": "과일",
+      "days": {
+        "실온": 1,
+        "냉장": 7,
+        "냉동": 30
+      },
+      "source": "FoodKeeper #261 Grapes"
+    },
+    {
+      "name": "키위",
+      "aliases": [],
+      "category": "과일",
+      "days": {
+        "냉장": 5
+      },
+      "source": "FoodKeeper #263 Kiwi fruit"
+    },
+    {
+      "name": "멜론",
+      "aliases": [],
+      "category": "과일",
+      "days": {
+        "냉장": 14,
+        "냉동": 30
+      },
+      "source": "FoodKeeper #264 Melons"
+    },
+    {
+      "name": "수박",
+      "aliases": [],
+      "category": "과일",
+      "days": {
+        "실온": 2,
+        "냉장": 4,
+        "냉동": 360
+      },
+      "source": "FoodKeeper #495 Watermelon"
+    },
+    {
+      "name": "복숭아",
+      "aliases": [
+        "천도복숭아"
+      ],
+      "category": "과일",
+      "days": {
+        "냉장": 4,
+        "냉동": 60
+      },
+      "source": "FoodKeeper #266 Peaches, nectarines, plums, pears, sapote"
+    },
+    {
+      "name": "자두",
+      "aliases": [],
+      "category": "과일",
+      "days": {
+        "냉장": 4,
+        "냉동": 60
+      },
+      "source": "FoodKeeper #266 Peaches, nectarines, plums, pears, sapote"
+    },
+    {
+      "name": "파인애플",
+      "aliases": [],
+      "category": "과일",
+      "days": {
+        "냉장": 6,
+        "냉동": 340
+      },
+      "source": "FoodKeeper #267 Pineapple"
+    },
+    {
+      "name": "딸기",
+      "aliases": [],
+      "category": "과일",
+      "days": {
+        "냉장": 3,
+        "냉동": 320
+      },
+      "source": "FoodKeeper #481 Strawberries"
+    },
+    {
+      "name": "블루베리",
+      "aliases": [],
+      "category": "과일",
+      "days": {
+        "냉장": 12,
+        "냉동": 320
+      },
+      "source": "FoodKeeper #254 Blueberries"
+    },
+    {
+      "name": "체리",
+      "aliases": [],
+      "category": "과일",
+      "days": {
+        "냉장": 3,
+        "냉동": 320
+      },
+      "source": "FoodKeeper #483 Cherries"
+    },
+    {
+      "name": "망고",
+      "aliases": [],
+      "category": "과일",
+      "days": {
+        "실온": 4,
+        "냉장": 7,
+        "냉동": 220
+      },
+      "source": "FoodKeeper #265 Papaya, mango, feijoa, passionfruit, casaha melon"
+    },
+    {
+      "name": "석류",
+      "aliases": [],
+      "category": "과일",
+      "days": {
+        "실온": 4,
+        "냉장": 70,
+        "냉동": 340
+      },
+      "source": "FoodKeeper #269 Pomegranate"
+    },
+    {
+      "name": "아보카도",
+      "aliases": [],
+      "category": "과일",
+      "days": {
+        "냉장": 4
+      },
+      "source": "FoodKeeper #250 Avocados"
+    },
+    {
+      "name": "소고기",
+      "aliases": [
+        "쇠고기",
+        "한우",
+        "등심",
+        "안심",
+        "채끝"
+      ],
+      "category": "육류",
+      "days": {
+        "냉장": 4,
+        "냉동": 300
+      },
+      "source": "FoodKeeper #40 Beef (steaks) / 냉동: 식품안전나라 냉동보관 권장기간"
+    },
+    {
+      "name": "다진 소고기",
+      "aliases": [
+        "다진소고기"
+      ],
+      "category": "육류",
+      "days": {
+        "냉장": 2,
+        "냉동": 280
+      },
+      "source": "FoodKeeper #43 Beef (ground) / 냉동: 식품안전나라 냉동보관 권장기간"
+    },
+    {
+      "name": "소갈비",
+      "aliases": [
+        "갈비"
+      ],
+      "category": "육류",
+      "days": {
+        "냉장": 4,
+        "냉동": 300
+      },
+      "source": "FoodKeeper #42 Beef (short ribs) / 냉동: 식품안전나라 냉동보관 권장기간"
+    },
+    {
+      "name": "돼지고기",
+      "aliases": [
+        "목살",
+        "앞다리살"
+      ],
+      "category": "육류",
+      "days": {
+        "냉장": 4,
+        "냉동": 280
+      },
+      "source": "FoodKeeper #74 Pork (shoulder)"
+    },
+    {
+      "name": "돼지갈비",
+      "aliases": [],
+      "category": "육류",
+      "days": {
+        "냉장": 4,
+        "냉동": 280
+      },
+      "source": "FoodKeeper #72 Pork (ribs)"
+    },
+    {
+      "name": "다진 돼지고기",
+      "aliases": [
+        "다진돼지고기"
+      ],
+      "category": "육류",
+      "days": {
+        "냉장": 2,
+        "냉동": 110
+      },
+      "source": "FoodKeeper #73 Pork (ground)"
+    },
+    {
+      "name": "닭고기",
+      "aliases": [
+        "닭가슴살",
+        "닭다리",
+        "닭다리살",
+        "닭날개"
+      ],
+      "category": "육류",
+      "days": {
+        "냉장": 2,
+        "냉동": 270
+      },
+      "source": "FoodKeeper #117 Chicken parts (breast halves, boneless) / 냉동: 식품안전나라 냉동보관 권장기간"
+    },
+    {
+      "name": "닭",
+      "aliases": [
+        "생닭",
+        "통닭"
+      ],
+      "category": "육류",
+      "days": {
+        "냉장": 2,
+        "냉동": 360
+      },
+      "source": "FoodKeeper #113 Chicken (whole) / 냉동: 식품안전나라 냉동보관 권장기간"
+    },
+    {
+      "name": "다진 닭고기",
+      "aliases": [],
+      "category": "육류",
+      "days": {
+        "냉장": 2,
+        "냉동": 110
+      },
+      "source": "FoodKeeper #115 Ground turkey or chicken"
+    },
+    {
+      "name": "오리",
+      "aliases": [
+        "오리고기"
+      ],
+      "category": "육류",
+      "days": {
+        "냉장": 2,
+        "냉동": 180
+      },
+      "source": "FoodKeeper #123 Duckling (domestic or wild, whole)"
+    },
+    {
+      "name": "양고기",
+      "aliases": [],
+      "category": "육류",
+      "days": {
+        "냉장": 4,
+        "냉동": 280
+      },
+      "source": "FoodKeeper #51 Lamb (chops, ribs, or loin)"
+    },
+    {
+      "name": "곱창",
+      "aliases": [
+        "간",
+        "막창",
+        "대창"
+      ],
+      "category": "육류",
+      "days": {
+        "냉장": 2,
+        "냉동": 110
+      },
+      "source": "FoodKeeper #77 Variety meats (liver, tongue, chitterlings, etc.)"
+    },
+    {
+      "name": "베이컨",
+      "aliases": [],
+      "category": "육류",
+      "days": {
+        "냉장": 7,
+        "냉동": 50
+      },
+      "source": "FoodKeeper #79 Bacon / 냉동: 식품안전나라 냉동보관 권장기간"
+    },
+    {
+      "name": "햄",
+      "aliases": [
+        "슬라이스햄"
+      ],
+      "category": "육류",
+      "days": {
+        "냉장": 14,
+        "냉동": 50
+      },
+      "source": "FoodKeeper #515 Ham (pre-packaged, luncheon/deli meat) / 냉동: 식품안전나라 냉동보관 권장기간"
+    },
+    {
+      "name": "소시지",
+      "aliases": [
+        "비엔나소시지"
+      ],
+      "category": "육류",
+      "days": {
+        "냉장": 7,
+        "냉동": 50
+      },
+      "source": "FoodKeeper #103 Sausage (fully cooked smoked links, kielbasa) / 냉동: 식품안전나라 냉동보관 권장기간"
+    },
+    {
+      "name": "고등어",
+      "aliases": [],
+      "category": "해산물",
+      "days": {
+        "냉장": 2,
+        "냉동": 80
+      },
+      "source": "FoodKeeper #146 Fatty fish (bluefish, catfish, mackerel, mullet, salmon, tuna, etc.) / 냉동: 식품안전나라 냉동보관 권장기간"
+    },
+    {
+      "name": "연어",
+      "aliases": [],
+      "category": "해산물",
+      "days": {
+        "냉장": 2,
+        "냉동": 80
+      },
+      "source": "FoodKeeper #146 Fatty fish (bluefish, catfish, mackerel, mullet, salmon, tuna, etc.) / 냉동: 식품안전나라 냉동보관 권장기간"
+    },
+    {
+      "name": "참치",
+      "aliases": [],
+      "category": "해산물",
+      "days": {
+        "냉장": 2,
+        "냉동": 80
+      },
+      "source": "FoodKeeper #146 Fatty fish (bluefish, catfish, mackerel, mullet, salmon, tuna, etc.) / 냉동: 식품안전나라 냉동보관 권장기간"
+    },
+    {
+      "name": "대구",
+      "aliases": [],
+      "category": "해산물",
+      "days": {
+        "냉장": 2,
+        "냉동": 80
+      },
+      "source": "FoodKeeper #144 Lean fish (cod, flounder, haddock, halibut, sole, etc.) / 냉동: 식품안전나라 냉동보관 권장기간"
+    },
+    {
+      "name": "광어",
+      "aliases": [],
+      "category": "해산물",
+      "days": {
+        "냉장": 2,
+        "냉동": 80
+      },
+      "source": "FoodKeeper #144 Lean fish (cod, flounder, haddock, halibut, sole, etc.) / 냉동: 식품안전나라 냉동보관 권장기간"
+    },
+    {
+      "name": "가자미",
+      "aliases": [],
+      "category": "해산물",
+      "days": {
+        "냉장": 2,
+        "냉동": 80
+      },
+      "source": "FoodKeeper #144 Lean fish (cod, flounder, haddock, halibut, sole, etc.) / 냉동: 식품안전나라 냉동보관 권장기간"
+    },
+    {
+      "name": "명태",
+      "aliases": [
+        "동태"
+      ],
+      "category": "해산물",
+      "days": {
+        "냉장": 2,
+        "냉동": 80
+      },
+      "source": "FoodKeeper #145 Lean fish (pollock, ocean perch, rockfish, sea trout.) / 냉동: 식품안전나라 냉동보관 권장기간"
+    },
+    {
+      "name": "새우",
+      "aliases": [
+        "대하"
+      ],
+      "category": "해산물",
+      "days": {
+        "냉장": 2,
+        "냉동": 80
+      },
+      "source": "FoodKeeper #151 Shrimp, crayfish / 냉동: 식품안전나라 냉동보관 권장기간"
+    },
+    {
+      "name": "오징어",
+      "aliases": [],
+      "category": "해산물",
+      "days": {
+        "냉장": 2,
+        "냉동": 80
+      },
+      "source": "FoodKeeper #152 Squid / 냉동: 식품안전나라 냉동보관 권장기간"
+    },
+    {
+      "name": "조개",
+      "aliases": [
+        "바지락",
+        "홍합"
+      ],
+      "category": "해산물",
+      "days": {
+        "냉장": 2,
+        "냉동": 80
+      },
+      "source": "FoodKeeper #157 Live clams, mussels, crab, and oysters / 냉동: 식품안전나라 냉동보관 권장기간"
+    },
+    {
+      "name": "굴",
+      "aliases": [],
+      "category": "해산물",
+      "days": {
+        "냉장": 8,
+        "냉동": 80
+      },
+      "source": "FoodKeeper #153 Shucked clams, mussels, and oysters / 냉동: 식품안전나라 냉동보관 권장기간"
+    },
+    {
+      "name": "게",
+      "aliases": [
+        "꽃게"
+      ],
+      "category": "해산물",
+      "days": {
+        "냉장": 2,
+        "냉동": 80
+      },
+      "source": "FoodKeeper #157 Live clams, mussels, crab, and oysters / 냉동: 식품안전나라 냉동보관 권장기간"
+    },
+    {
+      "name": "가리비",
+      "aliases": [],
+      "category": "해산물",
+      "days": {
+        "냉장": 2,
+        "냉동": 80
+      },
+      "source": "FoodKeeper #150 Scallops / 냉동: 식품안전나라 냉동보관 권장기간"
+    },
+    {
+      "name": "요거트",
+      "aliases": [
+        "요구르트"
+      ],
+      "category": "유제품",
+      "days": {
+        "냉장": 12,
+        "냉동": 50
+      },
+      "source": "FoodKeeper #33 Yogurt"
+    },
+    {
+      "name": "버터",
+      "aliases": [],
+      "category": "유제품",
+      "days": {
+        "냉장": 50,
+        "냉동": 240
+      },
+      "source": "FoodKeeper #1 Butter"
+    },
+    {
+      "name": "슬라이스치즈",
+      "aliases": [],
+      "category": "유제품",
+      "days": {
+        "냉장": 26
+      },
+      "source": "FoodKeeper #6 Cheese (processed slices)"
+    },
+    {
+      "name": "모짜렐라치즈",
+      "aliases": [
+        "피자치즈"
+      ],
+      "category": "유제품",
+      "days": {
+        "냉장": 30,
+        "냉동": 110
+      },
+      "source": "FoodKeeper #5 Cheese (shredded; cheddar, mozzarella, etc.)"
+    },
+    {
+      "name": "생크림",
+      "aliases": [],
+      "category": "유제품",
+      "days": {
+        "냉장": 10,
+        "냉동": 110
+      },
+      "source": "FoodKeeper #14 Cream (heavy)"
+    },
+    {
+      "name": "크림치즈",
+      "aliases": [],
+      "category": "유제품",
+      "days": {
+        "냉장": 14
+      },
+      "source": "FoodKeeper #10 Cream cheese"
+    },
+    {
+      "name": "계란",
+      "aliases": [
+        "달걀"
+      ],
+      "category": "유제품",
+      "days": {
+        "냉장": 30
+      },
+      "source": "FoodKeeper #21 Eggs (in shell)"
+    },
+    {
+      "name": "두부",
+      "aliases": [],
+      "category": "기타",
+      "days": {
+        "냉장": 7,
+        "냉동": 150
+      },
+      "source": "FoodKeeper #168 Tofu"
+    },
+    {
+      "name": "김치",
+      "aliases": [],
+      "category": "기타",
+      "days": {
+        "냉장": 300
+      },
+      "source": "FoodKeeper #493 Kimchi"
+    },
+    {
+      "name": "된장",
+      "aliases": [],
+      "category": "기타",
+      "days": {
+        "냉장": 365
+      },
+      "source": "FoodKeeper #169 Miso"
+    },
+    {
+      "name": "밥",
+      "aliases": [],
+      "category": "기타",
+      "days": {
+        "냉장": 5,
+        "냉동": 180
+      },
+      "source": "FoodKeeper #178 Cooked rice"
+    }
+  ],
+  "similar": [
+    {
+      "name": "깻잎",
+      "aliases": [],
+      "category": "채소",
+      "similar_to": "상추"
+    },
+    {
+      "name": "미나리",
+      "aliases": [],
+      "category": "채소",
+      "similar_to": "시금치"
+    },
+    {
+      "name": "쑥갓",
+      "aliases": [],
+      "category": "채소",
+      "similar_to": "시금치"
+    },
+    {
+      "name": "부추",
+      "aliases": [],
+      "category": "채소",
+      "similar_to": "쪽파"
+    },
+    {
+      "name": "배추",
+      "aliases": [
+        "알배추",
+        "얼갈이"
+      ],
+      "category": "채소",
+      "similar_to": "양배추"
+    },
+    {
+      "name": "무",
+      "aliases": [
+        "열무",
+        "총각무"
+      ],
+      "category": "채소",
+      "similar_to": "래디시"
+    },
+    {
+      "name": "우엉",
+      "aliases": [],
+      "category": "채소",
+      "similar_to": "당근"
+    },
+    {
+      "name": "토마토",
+      "aliases": [
+        "대추토마토"
+      ],
+      "category": "채소",
+      "similar_to": "방울토마토"
+    },
+    {
+      "name": "참외",
+      "aliases": [],
+      "category": "과일",
+      "similar_to": "멜론"
+    },
+    {
+      "name": "배",
+      "aliases": [
+        "신고배"
+      ],
+      "category": "과일",
+      "similar_to": "사과"
+    },
+    {
+      "name": "한라봉",
+      "aliases": [
+        "천혜향",
+        "레드향"
+      ],
+      "category": "과일",
+      "similar_to": "귤"
+    },
+    {
+      "name": "삼겹살",
+      "aliases": [
+        "오겹살",
+        "항정살"
+      ],
+      "category": "육류",
+      "similar_to": "돼지고기"
+    },
+    {
+      "name": "갈치",
+      "aliases": [
+        "조기",
+        "굴비"
+      ],
+      "category": "해산물",
+      "similar_to": "대구"
+    },
+    {
+      "name": "주꾸미",
+      "aliases": [
+        "낙지",
+        "문어"
+      ],
+      "category": "해산물",
+      "similar_to": "오징어"
+    },
+    {
+      "name": "꼬막",
+      "aliases": [
+        "전복",
+        "소라"
+      ],
+      "category": "해산물",
+      "similar_to": "조개"
+    }
+  ]
+}

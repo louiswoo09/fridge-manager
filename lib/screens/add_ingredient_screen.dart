@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/ingredient.dart';
 import '../services/ingredient_service.dart';
+import '../services/shelf_life_service.dart';
 import '../widgets/expiration_date_field.dart';
 
 class AddIngredientScreen extends StatefulWidget {
@@ -19,7 +20,8 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
   String _category = '채소';
   String _unit = '개';
   String _storage = '냉장';
-  DateTime _expirationDate = DateTime.now().add(const Duration(days: 7));
+  DateTime? _expirationDate; // 비어 있으면 저장 불가
+  late ShelfLifeEstimate _estimate; // 자동 계산 제안값
 
   final List<String> _categories = ['채소', '육류', '유제품', '과일', '해산물', '기타'];
   final List<String> _units = ['개', 'g', 'ml', 'L', '팩'];
@@ -31,6 +33,7 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
     if (widget.prefilledName != null) {
       _nameController.text = widget.prefilledName!;
     }
+    _updateEstimate();
   }
 
   @override
@@ -38,6 +41,15 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
     _nameController.dispose();
     _quantityController.dispose();
     super.dispose();
+  }
+
+  /// 제안값만 다시 계산 (날짜는 [적용]을 눌러야 들어감)
+  void _updateEstimate() {
+    _estimate = ShelfLifeService().estimate(
+      name: _nameController.text,
+      category: _category,
+      storage: _storage,
+    );
   }
 
   /// 이름 끝 글자에 받침이 있으면 '을', 없으면 '를'
@@ -62,6 +74,13 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
       ).showSnackBar(const SnackBar(content: Text('수량은 숫자로 입력해주세요.')));
       return;
     }
+    final expiration = _expirationDate;
+    if (expiration == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('소비기한을 입력해주세요.')));
+      return;
+    }
 
     final ingredient = Ingredient(
       id: '',
@@ -70,7 +89,7 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
       quantity: int.tryParse(_quantityController.text) ?? 1,
       unit: _unit,
       storage: _storage,
-      expirationDate: _expirationDate,
+      expirationDate: expiration,
       addedAt: DateTime.now(),
       isDeleted: false,
     );
@@ -102,6 +121,7 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
 
   @override
   Widget build(BuildContext context) {
+
     return Scaffold(
       appBar: AppBar(title: const Text('식재료 추가')),
       body: SingleChildScrollView(
@@ -111,6 +131,7 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
           children: [
             TextField(
               controller: _nameController,
+              onChanged: (_) => setState(_updateEstimate),
               decoration: const InputDecoration(
                 labelText: '식재료 이름',
                 border: OutlineInputBorder(),
@@ -147,7 +168,10 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
               items: _categories
                   .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                   .toList(),
-              onChanged: (v) => setState(() => _category = v!),
+              onChanged: (v) => setState(() {
+                _category = v!;
+                _updateEstimate();
+              }),
             ),
             const SizedBox(height: 16),
             const Text('보관 방법', style: TextStyle(color: Colors.grey)),
@@ -157,11 +181,30 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
               items: _storages
                   .map((s) => DropdownMenuItem(value: s, child: Text(s)))
                   .toList(),
-              onChanged: (v) => setState(() => _storage = v!),
+              onChanged: (v) => setState(() {
+                _storage = v!;
+                _updateEstimate();
+              }),
             ),
             const SizedBox(height: 16),
+            Row(
+              children: [
+                const Text(
+                  '소비기한',
+                  style: TextStyle(color: Colors.grey, fontSize: 13),
+                ),
+                const Spacer(),
+                AutoExpirationChip(
+                  date: _estimate.expirationDate,
+                  current: _expirationDate,
+                  onApply: (d) => setState(() => _expirationDate = d),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
             ExpirationDateField(
               value: _expirationDate,
+              showLabel: false,
               onChanged: (d) => setState(() => _expirationDate = d),
             ),
             const SizedBox(height: 32),

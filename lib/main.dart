@@ -9,11 +9,13 @@ import 'services/notification_service.dart';
 import 'screens/shopping_screen.dart';
 import 'models/recipe_mode.dart';
 import 'services/fridge_service.dart';
+import 'services/shelf_life_service.dart';
 
 typedef OnRequestRecipeKeywordSearch = void Function(List<String> keywords);
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await ShelfLifeService().load();
   await NotificationService.initialize();
   runApp(const MyApp());
 }

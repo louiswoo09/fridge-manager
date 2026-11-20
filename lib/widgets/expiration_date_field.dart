@@ -41,7 +41,7 @@ String _formatDate(DateTime d) =>
 
 /// 소비기한 한 줄: 누르면 하단 시트가 열림
 class ExpirationDateField extends StatelessWidget {
-  final DateTime value;
+  final DateTime? value;
   final ValueChanged<DateTime> onChanged;
   final bool showLabel;
 
@@ -54,7 +54,8 @@ class ExpirationDateField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (dDayText, dDayColor) = _dDay(value);
+    final v = value;
+    final dDay = v == null ? null : _dDay(v);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -72,7 +73,7 @@ class ExpirationDateField extends StatelessWidget {
           onTap: () async {
             final picked = await showExpirationDateSheet(
               context,
-              initial: value,
+              initial: v ?? _today(),
             );
             if (picked != null) onChanged(picked);
           },
@@ -90,15 +91,22 @@ class ExpirationDateField extends StatelessWidget {
                   color: Colors.grey.shade600,
                 ),
                 const SizedBox(width: 8),
-                Text(_formatDate(value), style: const TextStyle(fontSize: 15)),
-                const Spacer(),
                 Text(
-                  dDayText,
+                  v == null ? '날짜를 선택해주세요' : _formatDate(v),
                   style: TextStyle(
-                    color: dDayColor,
-                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: v == null ? Colors.grey : null,
                   ),
                 ),
+                const Spacer(),
+                if (dDay != null)
+                  Text(
+                    dDay.$1,
+                    style: TextStyle(
+                      color: dDay.$2,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 const SizedBox(width: 4),
                 Icon(
                   Icons.chevron_right,
@@ -436,6 +444,67 @@ class _RepeatIconButtonState extends State<_RepeatIconButton> {
           borderRadius: BorderRadius.circular(6),
         ),
         child: Icon(widget.icon, size: 18, color: Colors.grey.shade600),
+      ),
+    );
+  }
+}
+
+/// 소비기한 칸 아래 "자동 계산 N일 → 날짜 [적용]" 줄
+/// 소비기한 라벨 오른쪽 "✨ 자동 계산 D-60" 칩
+/// 이미 그 날짜면 "✓ 자동 계산 적용됨"으로 바뀜
+class AutoExpirationChip extends StatelessWidget {
+  final DateTime date; // 자동 계산 날짜
+  final DateTime? current; // 지금 입력된 날짜
+  final ValueChanged<DateTime> onApply;
+
+  const AutoExpirationChip({
+    super.key,
+    required this.date,
+    required this.current,
+    required this.onApply,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = current;
+    final applied =
+        c != null &&
+        c.year == date.year &&
+        c.month == date.month &&
+        c.day == date.day;
+    final (dDayText, _) = _dDay(date);
+
+    final color = applied ? Colors.grey.shade500 : Colors.indigo;
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: applied ? null : () => onApply(date),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: applied ? null : Colors.indigo.withValues(alpha: 0.08),
+          border: applied
+              ? Border.all(color: Colors.grey.shade300, width: 0.8)
+              : null,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (applied) ...[
+              Icon(Icons.check, size: 14, color: color),
+              const SizedBox(width: 4),
+            ],
+            const SizedBox(width: 4),
+            Text(
+              applied ? '자동 계산 적용됨' : '자동 계산 $dDayText',
+              style: TextStyle(
+                fontSize: 12,
+                color: color,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

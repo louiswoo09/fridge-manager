@@ -19,6 +19,7 @@ import 'package:image_picker/image_picker.dart';
 import '../services/ingredient_recognition_service.dart';
 import 'recognition_review_screen.dart';
 import 'photo_collect_screen.dart';
+import '../utils/ingredient_name.dart';
 
 class IngredientListScreen extends StatefulWidget {
   final OnRequestRecipeKeywordSearch? onRequestRecipeKeywordSearch;
@@ -1074,39 +1075,9 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
 
   // ───────────────────────── 담아놓기 정리 제안 ─────────────────────────
 
-  /// 비교용 이름 정리: 괄호 내용 제거, 공백 제거, 표기 통일
-  String _baseName(String name) => _normalizeName(
-    name.replaceAll(RegExp(r'\([^)]*\)'), '').replaceAll(' ', '').trim(),
-  );
-
   /// 담아놓기(KAMIS) 이름의 비교 후보: "포도/샤인머스켓" → [포도, 샤인머스캣]
   List<String> _cartNameCandidates(String display) =>
-      display.split('/').map(_baseName).where((n) => n.isNotEmpty).toList();
-
-  /// 자주 섞여 쓰이는 표기 → 하나로 통일 (비교할 때만 사용)
-  static const _nameAliases = {
-    '메론': '멜론',
-    '샤인머스켓': '샤인머스캣',
-    '소세지': '소시지',
-    '쭈꾸미': '주꾸미',
-    '브로컬리': '브로콜리',
-    '참다래': '키위',
-    '케찹': '케첩',
-  };
-
-  String _normalizeName(String name) {
-    var result = name;
-    _nameAliases.forEach((from, to) => result = result.replaceAll(from, to));
-    return result;
-  }
-
-  bool _isNameMatch(String a, String b) {
-    if (a.isEmpty || b.isEmpty) return false;
-    if (a == b) return true;
-    final shorter = a.length <= b.length ? a : b;
-    final longer = a.length <= b.length ? b : a;
-    return shorter.length >= 2 && longer.endsWith(shorter);
-  }
+      display.split('/').map(normalizeIngredientName).where((n) => n.isNotEmpty).toList();
 
   /// 등록한 재료와 이름이 맞는 담아놓기 품목이 있으면 빼기를 제안
   Future<void> _offerCartCleanup(List<Ingredient> registered) async {
@@ -1119,7 +1090,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
     if (cart.isEmpty || !mounted) return;
 
     final names = registered
-        .map((e) => _baseName(e.name))
+        .map((e) => normalizeIngredientName(e.name))
         .where((n) => n.isNotEmpty)
         .toSet();
 
@@ -1130,7 +1101,7 @@ class _IngredientListScreenState extends State<IngredientListScreen> {
       final candidates = _cartNameCandidates(display);
       String? matched;
       for (final n in names) {
-        if (candidates.any((cand) => _isNameMatch(cand, n))) {
+        if (candidates.any((cand) => isSameIngredientName(cand, n))) {
           matched = n;
           break;
         }
