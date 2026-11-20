@@ -762,175 +762,182 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
             ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (imageUrl.isNotEmpty)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: CachedNetworkImage(
-                  imageUrl: imageUrl,
-                  width: double.infinity,
-                  height: 250,
-                  fit: BoxFit.contain, // cover → contain
-                  placeholder: (context, url) =>
-                      Container(height: 250, color: Colors.grey.shade200),
-                  errorWidget: (context, url, error) => const SizedBox.shrink(),
+      body: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (imageUrl.isNotEmpty)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: CachedNetworkImage(
+                    imageUrl: imageUrl,
+                    width: double.infinity,
+                    height: 250,
+                    fit: BoxFit.contain, // cover → contain
+                    placeholder: (context, url) =>
+                        Container(height: 250, color: Colors.grey.shade200),
+                    errorWidget: (context, url, error) =>
+                        const SizedBox.shrink(),
+                  ),
                 ),
+              const SizedBox(height: 16),
+              Text(
+                '출처: ${widget.recipe['source'] ?? ''}',
+                style: const TextStyle(color: Colors.grey, fontSize: 12),
               ),
-            const SizedBox(height: 16),
-            Text(
-              '출처: ${widget.recipe['source'] ?? ''}',
-              style: const TextStyle(color: Colors.grey, fontSize: 12),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              '재료',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(ingredients, style: const TextStyle(height: 1.6)),
-            const SizedBox(height: 16),
-            if (manuals.isNotEmpty) ...[
+              const SizedBox(height: 8),
               const Text(
-                '조리법',
+                '재료',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
-              ...manuals.map(
-                (step) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(
-                    step.replaceAll('\n', ' '),
-                    style: const TextStyle(height: 1.6),
-                  ),
-                ),
-              ),
+              Text(ingredients, style: const TextStyle(height: 1.6)),
               const SizedBox(height: 16),
-            ],
-            const Divider(),
-            const SizedBox(height: 16),
-            // 모드 토글 추가
-            Row(
-              children: [
-                const Icon(Icons.tune, size: 18, color: Colors.grey),
-                const SizedBox(width: 8),
+              if (manuals.isNotEmpty) ...[
                 const Text(
-                  'AI 변형',
-                  style: TextStyle(color: Colors.grey, fontSize: 13),
+                  '조리법',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
-                const Spacer(),
-              ],
-            ),
-            const SizedBox(height: 8),
-            // 변형 모드 토글
-            SegmentedButton<RecipeMode>(
-              segments: const [
-                ButtonSegment(
-                  value: RecipeMode.fridge,
-                  label: Text('냉장고 재료만'),
-                  icon: Icon(Icons.kitchen, size: 18),
-                ),
-                ButtonSegment(
-                  value: RecipeMode.shopping,
-                  label: Text('담아놓기 포함'),
-                  icon: Icon(Icons.shopping_cart, size: 18),
-                ),
-              ],
-              selected: {_currentMode},
-              onSelectionChanged: _isGeminiLoading
-                  ? null
-                  : (set) => _onModeChanged(set.first),
-            ),
-
-            // 냉장고 모드일 때만 필터 드롭다운
-            if (_currentMode == RecipeMode.fridge) ...[
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Text(
-                    '모드: ',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black,
-                      fontSize: 16,
+                const SizedBox(height: 8),
+                ...manuals.map(
+                  (step) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      step.replaceAll('\n', ' '),
+                      style: const TextStyle(height: 1.6),
                     ),
                   ),
-                  DropdownButton<FridgeFilter>(
-                    value: _fridgeFilter,
-                    underline: const SizedBox.shrink(),
-                    items: const [
-                      DropdownMenuItem(
-                        value: FridgeFilter.all,
-                        child: Text(
-                          '냉장고 전체',
-                          style: TextStyle(fontWeight: FontWeight.w300),
-                        ),
-                      ),
-                      DropdownMenuItem(
-                        value: FridgeFilter.imminent,
-                        child: Text(
-                          '임박 우선',
-                          style: TextStyle(fontWeight: FontWeight.w300),
-                        ),
-                      ),
-                    ],
-                    onChanged: _isGeminiLoading ? null : _onFilterChanged,
-                  ),
-                ],
-              ),
-            ],
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _isGeminiLoading
-                    ? null
-                    : () => _callGemini(forceRefresh: _geminiResult != null),
-                icon: _isGeminiLoading
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(
-                        _geminiResult != null
-                            ? Icons.refresh
-                            : Icons.auto_awesome,
-                      ),
-                label: Text(
-                  _isGeminiLoading
-                      ? 'AI 변형 중...'
-                      : (_geminiResult != null ? '다시 변형하기' : 'AI 맞춤 변형'),
                 ),
-              ),
-            ),
-            if (_geminiResult != null) ...[
+                const SizedBox(height: 16),
+              ],
+              const Divider(),
               const SizedBox(height: 16),
+              // 모드 토글 추가
               Row(
                 children: [
+                  const Icon(Icons.tune, size: 18, color: Colors.grey),
+                  const SizedBox(width: 8),
                   const Text(
-                    'AI 맞춤 레시피',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    'AI 변형',
+                    style: TextStyle(color: Colors.grey, fontSize: 13),
                   ),
                   const Spacer(),
-                  IconButton(
-                    icon: Icon(
-                      _isVariantFavorited ? Icons.star : Icons.star_border,
-                      color: _isVariantFavorited ? Colors.amber : null,
-                    ),
-                    tooltip: _isVariantFavorited ? '즐겨찾기 해제' : '즐겨찾기 추가',
-                    visualDensity: VisualDensity.compact,
-                    onPressed: _toggleVariantFavorite,
-                  ),
                 ],
               ),
               const SizedBox(height: 8),
-              _buildVariantCard(),
+              // 변형 모드 토글
+              SegmentedButton<RecipeMode>(
+                segments: const [
+                  ButtonSegment(
+                    value: RecipeMode.fridge,
+                    label: Text('냉장고 재료만'),
+                    icon: Icon(Icons.kitchen, size: 18),
+                  ),
+                  ButtonSegment(
+                    value: RecipeMode.shopping,
+                    label: Text('담아놓기 포함'),
+                    icon: Icon(Icons.shopping_cart, size: 18),
+                  ),
+                ],
+                selected: {_currentMode},
+                onSelectionChanged: _isGeminiLoading
+                    ? null
+                    : (set) => _onModeChanged(set.first),
+              ),
+
+              // 냉장고 모드일 때만 필터 드롭다운
+              if (_currentMode == RecipeMode.fridge) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Text(
+                      '모드: ',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w500,
+                        color: Colors.black,
+                        fontSize: 16,
+                      ),
+                    ),
+                    DropdownButton<FridgeFilter>(
+                      value: _fridgeFilter,
+                      underline: const SizedBox.shrink(),
+                      items: const [
+                        DropdownMenuItem(
+                          value: FridgeFilter.all,
+                          child: Text(
+                            '냉장고 전체',
+                            style: TextStyle(fontWeight: FontWeight.w300),
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: FridgeFilter.imminent,
+                          child: Text(
+                            '임박 우선',
+                            style: TextStyle(fontWeight: FontWeight.w300),
+                          ),
+                        ),
+                      ],
+                      onChanged: _isGeminiLoading ? null : _onFilterChanged,
+                    ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _isGeminiLoading
+                      ? null
+                      : () => _callGemini(forceRefresh: _geminiResult != null),
+                  icon: _isGeminiLoading
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          _geminiResult != null
+                              ? Icons.refresh
+                              : Icons.auto_awesome,
+                        ),
+                  label: Text(
+                    _isGeminiLoading
+                        ? 'AI 변형 중...'
+                        : (_geminiResult != null ? '다시 변형하기' : 'AI 맞춤 변형'),
+                  ),
+                ),
+              ),
+              if (_geminiResult != null) ...[
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    const Text(
+                      'AI 맞춤 레시피',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: Icon(
+                        _isVariantFavorited ? Icons.star : Icons.star_border,
+                        color: _isVariantFavorited ? Colors.amber : null,
+                      ),
+                      tooltip: _isVariantFavorited ? '즐겨찾기 해제' : '즐겨찾기 추가',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: _toggleVariantFavorite,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                _buildVariantCard(),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
