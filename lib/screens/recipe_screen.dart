@@ -34,6 +34,7 @@ class RecipeScreenState extends State<RecipeScreen> {
   bool _isSelectionExpanded = true; // 재료 선택 영역 펼침/접기
   static const int _maxSelection = 3;
   static const int _maxSequentialSearches = 2;
+  static const int _maxRecipes = 300; // 냉장고 모드 최대 결과 수
 
   SearchType _searchType = SearchType.ingredient;
   String _searchKeyword = '';
@@ -151,6 +152,13 @@ class RecipeScreenState extends State<RecipeScreen> {
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(msg)));
   }
+
+  /// 사진이 없거나 불러오기에 실패한 레시피 제목 보정
+  Widget _noImageBox() => Container(
+    color: Colors.grey.shade100,
+    alignment: Alignment.center,
+    child: Icon(Icons.restaurant, size: 28, color: Colors.grey.shade400),
+  );
 
   @override
   void initState() {
@@ -289,7 +297,7 @@ class RecipeScreenState extends State<RecipeScreen> {
         .map(
           (r) => {
             ...r,
-            'source': '식품의약품안전처',
+            'source': r['source']?.toString() ?? '',
             'searched_keywords': [keyword],
           },
         )
@@ -311,18 +319,20 @@ class RecipeScreenState extends State<RecipeScreen> {
     for (var r in results) {
       final name = r['RCP_NM'];
       if (name == null) continue;
+      // 출처가 다르면 같은 요리명이라도 따로 (레시피 번호 기준)
+      final key = (r['RCP_SEQ'] ?? name).toString();
 
-      if (unique.containsKey(name)) {
+      if (unique.containsKey(key)) {
         final existing = List<String>.from(
-          unique[name]!['searched_keywords'] ?? [],
+          unique[key]!['searched_keywords'] ?? [],
         );
         final newKeywords = List<String>.from(r['searched_keywords'] ?? []);
         for (final k in newKeywords) {
           if (!existing.contains(k)) existing.add(k);
         }
-        unique[name] = {...unique[name]!, 'searched_keywords': existing};
+        unique[key] = {...unique[key]!, 'searched_keywords': existing};
       } else {
-        unique[name] = r;
+        unique[key] = r;
       }
     }
   }
@@ -527,11 +537,19 @@ class RecipeScreenState extends State<RecipeScreen> {
 
       if (!mounted) return;
 
-      final allRecipes = unique.values.toList();
-      allRecipes.shuffle();
-
-      final finalRecipes = allRecipes.take(60).toList();
-
+      // 출처별로 섞은 뒤 번갈아 배치 (재료 여러 개를 합쳐도 반반 유지)
+      final bySource = <String, List<Map<String, dynamic>>>{};
+      for (final r in unique.values) {
+        bySource.putIfAbsent(r['source']?.toString() ?? '', () => []).add(r);
+      }
+      final groups = bySource.values.map((g) => g..shuffle()).toList();
+      final allRecipes = <Map<String, dynamic>>[];
+      for (var i = 0; groups.any((g) => i < g.length); i++) {
+        for (final g in groups) {
+          if (i < g.length) allRecipes.add(g[i]);
+        }
+      }
+      final finalRecipes = allRecipes.take(_maxRecipes).toList();
       _listCache.save(
         mode: _currentMode,
         filter: _fridgeFilter,
@@ -1104,32 +1122,31 @@ class RecipeScreenState extends State<RecipeScreen> {
                                 vertical: 6,
                               ),
                               child: ListTile(
-                                leading: imageUrl.isNotEmpty
-                                    ? ClipRRect(
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: CachedNetworkImage(
-                                          imageUrl: imageUrl,
-                                          width: 60,
-                                          height: 60,
-                                          fit: BoxFit.cover,
-                                          memCacheWidth: 120,
-                                          memCacheHeight: 120,
-                                          placeholder: (context, url) =>
-                                              Container(
-                                                width: 60,
-                                                height: 60,
-                                                color: Colors.grey.shade200,
-                                              ),
-                                          errorWidget: (context, url, error) {
-                                            debugPrint('이미지 에러: $url, $error');
-                                            return const Icon(
-                                              Icons.restaurant,
-                                              size: 40,
-                                            );
-                                          },
-                                        ),
-                                      )
-                                    : const Icon(Icons.restaurant, size: 40),
+                                leading: ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: SizedBox(
+                                    width: 60,
+                                    height: 60,
+                                    child: imageUrl.isNotEmpty
+                                        ? CachedNetworkImage(
+                                            imageUrl: imageUrl,
+                                            fit: BoxFit.cover,
+                                            memCacheWidth: 120,
+                                            memCacheHeight: 120,
+                                            placeholder: (context, url) =>
+                                                Container(
+                                                  color: Colors.grey.shade200,
+                                                ),
+                                            errorWidget: (context, url, error) {
+                                              debugPrint(
+                                                '이미지 에러: $url, $error',
+                                              );
+                                              return _noImageBox();
+                                            },
+                                          )
+                                        : _noImageBox(),
+                                  ),
+                                ),
                                 title: Text(
                                   name,
                                   style: const TextStyle(

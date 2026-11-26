@@ -16,12 +16,13 @@ if not KEY:
     sys.exit("FOOD_API_KEY가 .env에 없습니다")
 
 BASE = "https://openapi.foodsafetykorea.go.kr/api/{key}/COOKRCP01/json/{start}/{end}"
+PAGE = 200
 OUT = Path(__file__).resolve().parent.parent / "app" / "data" / "recipes.json"
 
 rows, start, total = [], 1, None
 with httpx.Client(timeout=60, follow_redirects=True) as client:
     while total is None or start <= total:
-        end = start + 999
+        end = start + PAGE - 1
         res = client.get(BASE.format(key=KEY, start=start, end=end))
         if res.status_code != 200:
             sys.exit(f"응답 오류 {res.status_code} ({start}~{end})")
@@ -36,6 +37,9 @@ with httpx.Client(timeout=60, follow_redirects=True) as client:
         if not page:
             break
         start = end + 1
+
+if not total or len(rows) != total:
+    sys.exit(f"받은 개수({len(rows)})가 전체({total})와 달라서 저장하지 않았습니다. 다시 실행해주세요")
 
 OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")
